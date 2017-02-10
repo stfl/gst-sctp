@@ -194,3 +194,4 @@ configure_file(input : 'config.h.meson',
 
 subdir('sctp')
 subdir('rtpudp')
+subdir('rtpsctp')

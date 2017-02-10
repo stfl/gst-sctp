@@ -1,0 +1,8 @@
+
+" make clang-chack in neomake find the compile_commands.json created by meson.build
+let g:neomake_c_clangcheck_args = ['%:p', '-p', g:localvimrc_script_dir.'/build']
+let g:neomake_c_enabled_makers = ['clangcheck']
+
+" add compile_commands.json to deoplete-clang completion
+let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
+
