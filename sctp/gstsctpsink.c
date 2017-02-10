@@ -145,6 +145,7 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
    GstPad *sinkpad = GST_BASE_SINK_PAD(sctpsink);
    g_print("name: %s",GST_PAD_NAME(sinkpad));
 
+   /* g_print("%s\n", "init"); */
 }
 
 void
