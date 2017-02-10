@@ -1,10 +1,10 @@
 project('gst-sctp', 'c',
-  version : '1.10.0',
-  meson_version : '>= 0.35.0',
-  default_options : [ 'warning_level=1',
-                      'buildtype=debugoptimized' ])
+    version : '1.10.0',
+    meson_version : '>= 0.35.0',
+    default_options : [ 'warning_level=1',
+      'buildtype=debugoptimized' ])
 
-gst_version = meson.project_version()
+    gst_version = meson.project_version()
 version_arr = gst_version.split('.')
 gst_version_major = version_arr[0]
 gst_version_minor = version_arr[1]
@@ -38,23 +38,23 @@ endif
 cdata = configuration_data()
 
 check_headers = [
-  ['HAVE_DLFCN_H', 'dlfcn.h'],
-  ['HAVE_FCNTL_H', 'fcntl.h'],
-  ['HAVE_INTTYPES_H', 'inttypes.h'],
-  ['HAVE_MEMORY_H', 'memory.h'],
-  ['HAVE_PROCESS_H', 'process.h'],
-  ['HAVE_STDINT_H', 'stdint.h'],
-  ['HAVE_STDLIB_H', 'stdlib.h'],
-  ['HAVE_STRINGS_H', 'strings.h'],
-  ['HAVE_STRING_H', 'string.h'],
-  ['HAVE_SYS_IOCTL_H', 'sys/ioctl.h'],
-  ['HAVE_SYS_PARAM_H', 'sys/param.h'],
-  ['HAVE_SYS_SOCKET_H', 'sys/socket.h'],
-  ['HAVE_SYS_STAT_H', 'sys/stat.h'],
-  ['HAVE_SYS_TIME_H', 'sys/time.h'],
-  ['HAVE_SYS_TYPES_H', 'sys/types.h'],
-  ['HAVE_UNISTD_H', 'unistd.h'],
-]
+    ['HAVE_DLFCN_H', 'dlfcn.h'],
+    ['HAVE_FCNTL_H', 'fcntl.h'],
+    ['HAVE_INTTYPES_H', 'inttypes.h'],
+    ['HAVE_MEMORY_H', 'memory.h'],
+    ['HAVE_PROCESS_H', 'process.h'],
+    ['HAVE_STDINT_H', 'stdint.h'],
+    ['HAVE_STDLIB_H', 'stdlib.h'],
+    ['HAVE_STRINGS_H', 'strings.h'],
+    ['HAVE_STRING_H', 'string.h'],
+    ['HAVE_SYS_IOCTL_H', 'sys/ioctl.h'],
+    ['HAVE_SYS_PARAM_H', 'sys/param.h'],
+    ['HAVE_SYS_SOCKET_H', 'sys/socket.h'],
+    ['HAVE_SYS_STAT_H', 'sys/stat.h'],
+    ['HAVE_SYS_TIME_H', 'sys/time.h'],
+    ['HAVE_SYS_TYPES_H', 'sys/types.h'],
+    ['HAVE_UNISTD_H', 'unistd.h'],
+    ]
 
 foreach h : check_headers
   if cc.has_header(h.get(1))
@@ -63,48 +63,48 @@ foreach h : check_headers
 endforeach
 
 check_functions = [
-  ['HAVE_ASINH', 'asinh', '#include<math.h>'],
-  ['HAVE_CLOCK_GETTIME', 'clock_gettime', '#include<time.h>'],
-  ['HAVE_COSH', 'cosh', '#include<math.h>'],
-# check token HAVE_CPU_ALPHA
-# check token HAVE_CPU_ARM
-# check token HAVE_CPU_CRIS
-# check token HAVE_CPU_CRISV32
-# check token HAVE_CPU_HPPA
-# check token HAVE_CPU_I386
-# check token HAVE_CPU_IA64
-# check token HAVE_CPU_M68K
-# check token HAVE_CPU_MIPS
-# check token HAVE_CPU_PPC
-# check token HAVE_CPU_PPC64
-# check token HAVE_CPU_S390
-# check token HAVE_CPU_SPARC
-# check token HAVE_CPU_X86_64
-  ['HAVE_DCGETTEXT', 'dcgettext', '#include<libintl.h>'],
-# check token HAVE_DIRECTSOUND
-# check token HAVE_EXPERIMENTAL
-# check token HAVE_EXTERNAL
-# check token HAVE_FPCLASS
-# check token HAVE_GCC_ASM
-  ['HAVE_GETPAGESIZE', 'getpagesize', '#include<unistd.h>'],
-# check token HAVE_GETTEXT
-# check token HAVE_GST_V4L2
-# check token HAVE_IOS
-  ['HAVE_ISINF', 'isinf', '#include<math.h>'],
-# check token HAVE_LIBV4L2
-  ['HAVE_MMAP', 'mmap', '#include<sys/mman.h>'],
-# check token HAVE_OSS
-# check token HAVE_OSS4
-# check token HAVE_OSS_INCLUDE_IN_MACHINE
-# check token HAVE_OSS_INCLUDE_IN_ROOT
-# check token HAVE_OSS_INCLUDE_IN_SYS
-# check token HAVE_OSX_AUDIO
-# check token HAVE_OSX_VIDEO
-# check token HAVE_RDTSC
-  ['HAVE_SINH', 'sinh', '#include<math.h>'],
-# check token HAVE_SUNAUDIO
-# check token HAVE_WAVEFORM
-]
+    ['HAVE_ASINH', 'asinh', '#include<math.h>'],
+    ['HAVE_CLOCK_GETTIME', 'clock_gettime', '#include<time.h>'],
+    ['HAVE_COSH', 'cosh', '#include<math.h>'],
+    # check token HAVE_CPU_ALPHA
+    # check token HAVE_CPU_ARM
+    # check token HAVE_CPU_CRIS
+    # check token HAVE_CPU_CRISV32
+    # check token HAVE_CPU_HPPA
+    # check token HAVE_CPU_I386
+    # check token HAVE_CPU_IA64
+    # check token HAVE_CPU_M68K
+    # check token HAVE_CPU_MIPS
+    # check token HAVE_CPU_PPC
+    # check token HAVE_CPU_PPC64
+    # check token HAVE_CPU_S390
+    # check token HAVE_CPU_SPARC
+    # check token HAVE_CPU_X86_64
+    ['HAVE_DCGETTEXT', 'dcgettext', '#include<libintl.h>'],
+    # check token HAVE_DIRECTSOUND
+    # check token HAVE_EXPERIMENTAL
+    # check token HAVE_EXTERNAL
+    # check token HAVE_FPCLASS
+    # check token HAVE_GCC_ASM
+    ['HAVE_GETPAGESIZE', 'getpagesize', '#include<unistd.h>'],
+    # check token HAVE_GETTEXT
+    # check token HAVE_GST_V4L2
+    # check token HAVE_IOS
+    ['HAVE_ISINF', 'isinf', '#include<math.h>'],
+    # check token HAVE_LIBV4L2
+    ['HAVE_MMAP', 'mmap', '#include<sys/mman.h>'],
+    # check token HAVE_OSS
+    # check token HAVE_OSS4
+    # check token HAVE_OSS_INCLUDE_IN_MACHINE
+    # check token HAVE_OSS_INCLUDE_IN_ROOT
+    # check token HAVE_OSS_INCLUDE_IN_SYS
+    # check token HAVE_OSX_AUDIO
+    # check token HAVE_OSX_VIDEO
+    # check token HAVE_RDTSC
+    ['HAVE_SINH', 'sinh', '#include<math.h>'],
+    # check token HAVE_SUNAUDIO
+    # check token HAVE_WAVEFORM
+    ]
 
 foreach f : check_functions
   if cc.has_function(f.get(1), prefix : f.get(2))
@@ -133,17 +133,17 @@ cdata.set('GST_PACKAGE_ORIGIN', '"Unknown package origin"') # FIXME: make config
 
 # Mandatory GST deps
 gst_dep = dependency('gstreamer-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_dep'])
+    fallback : ['gstreamer', 'gst_dep'])
 gstbase_dep = dependency('gstreamer-base-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_base_dep'])
+    fallback : ['gstreamer', 'gst_base_dep'])
 gstnet_dep = dependency('gstreamer-net-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_net_dep'])
+    fallback : ['gstreamer', 'gst_net_dep'])
 if host_machine.system() != 'windows'
   gstcheck_dep = dependency('gstreamer-check-1.0', version : gst_req,
-    fallback : ['gstreamer', 'gst_check_dep'])
+      fallback : ['gstreamer', 'gst_check_dep'])
 endif
 gstcontroller_dep = dependency('gstreamer-controller-1.0', version : gst_req,
-  fallback : ['gstreamer', 'gst_controller_dep'])
+    fallback : ['gstreamer', 'gst_controller_dep'])
 
 gstpbutils_dep = dependency('gstreamer-pbutils-1.0', version : gst_req,
     fallback : ['gst-plugins-base', 'pbutils_dep'])
@@ -170,7 +170,7 @@ gstvideo_dep = dependency('gstreamer-video-1.0', version : gst_req,
 
 gio_dep = dependency('gio-2.0', version : glib_req)
 glib_deps = [dependency('glib-2.0', version : glib_req),
-	     dependency('gobject-2.0', version : glib_req)]
+    dependency('gobject-2.0', version : glib_req)]
 
 
 gst_args = ['-DHAVE_CONFIG_H']
@@ -189,7 +189,7 @@ message('expecting libusrsctp at: ' + usrsctp_build_path)
 usrsctp_dep = cc.find_library('libusrsctp', dirs : usrsctp_build_path)
 
 configure_file(input : 'config.h.meson',
-  output : 'config.h',
-  configuration : cdata)
+    output : 'config.h',
+    configuration : cdata)
 
 subdir('sctp')
