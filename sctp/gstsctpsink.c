@@ -1,31 +1,5 @@
-/*
- * GStreamer
- * Copyright (C) 2005 Thomas Vander Stichele <thomas@apestaart.org>
- * Copyright (C) 2005 Ronald S. Bultje <rbultje@ronald.bitfreak.net>
- * Copyright (C) 2016 slendl <<user@hostname.org>>
- * 
- * Permission is hereby granted, free of charge, to any person obtaining a
- * copy of this software and associated documentation files (the "Software"),
- * to deal in the Software without restriction, including without limitation
- * the rights to use, copy, modify, merge, publish, distribute, sublicense,
- * and/or sell copies of the Software, and to permit persons to whom the
- * Software is furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
- * FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
- * DEALINGS IN THE SOFTWARE.
- *
- * Alternatively, the contents of this file may be used under the
- * GNU Lesser General Public License Version 2.1 (the "LGPL"), in
- * which case the following provisions apply instead of the ones
- * mentioned above:
+/* GStreamer
+ * Copyright (C) 2016 FIXME <fixme@example.com>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -39,238 +13,420 @@
  *
  * You should have received a copy of the GNU Library General Public
  * License along with this library; if not, write to the
- * Free Software Foundation, Inc., 59 Temple Place - Suite 330,
- * Boston, MA 02111-1307, USA.
+ * Free Software Foundation, Inc., 51 Franklin Street, Suite 500,
+ * Boston, MA 02110-1335, USA.
  */
-
 /**
- * SECTION:element-sctpsink
+ * SECTION:element-gstsctpsink
  *
- * FIXME:Describe sctpsink here.
+ * The sctpsink element does FIXME stuff.
  *
  * <refsect2>
  * <title>Example launch line</title>
  * |[
- * gst-launch -v -m fakesrc ! sctpsink ! fakesink silent=TRUE
+ * gst-launch -v fakesrc ! sctpsink ! FIXME ! fakesink
  * ]|
+ * FIXME Describe what the pipeline does.
  * </refsect2>
  */
 
 #ifdef HAVE_CONFIG_H
-#  include <config.h>
+#include "config.h"
 #endif
 
 #include <gst/gst.h>
-
+#include <gst/base/gstbasesink.h>
 #include "gstsctpsink.h"
 
-GST_DEBUG_CATEGORY_STATIC (gst_sctp_sink_debug);
-#define GST_CAT_DEFAULT gst_sctp_sink_debug
+GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
+#define GST_CAT_DEFAULT gst_sctpsink_debug_category
 
-/* Filter signals and args */
+/* prototypes */
+
+static void gst_sctpsink_set_property (GObject * object,
+    guint property_id, const GValue * value, GParamSpec * pspec);
+static void gst_sctpsink_get_property (GObject * object,
+    guint property_id, GValue * value, GParamSpec * pspec);
+static void gst_sctpsink_dispose (GObject * object);
+static void gst_sctpsink_finalize (GObject * object);
+
+static GstCaps *gst_sctpsink_get_caps (GstBaseSink * sink, GstCaps * filter);
+static gboolean gst_sctpsink_set_caps (GstBaseSink * sink, GstCaps * caps);
+static GstCaps *gst_sctpsink_fixate (GstBaseSink * sink, GstCaps * caps);
+static gboolean gst_sctpsink_activate_pull (GstBaseSink * sink,
+    gboolean active);
+static void gst_sctpsink_get_times (GstBaseSink * sink, GstBuffer * buffer,
+    GstClockTime * start, GstClockTime * end);
+static gboolean gst_sctpsink_propose_allocation (GstBaseSink * sink,
+    GstQuery * query);
+static gboolean gst_sctpsink_start (GstBaseSink * sink);
+static gboolean gst_sctpsink_stop (GstBaseSink * sink);
+static gboolean gst_sctpsink_unlock (GstBaseSink * sink);
+static gboolean gst_sctpsink_unlock_stop (GstBaseSink * sink);
+static gboolean gst_sctpsink_query (GstBaseSink * sink, GstQuery * query);
+static gboolean gst_sctpsink_event (GstBaseSink * sink, GstEvent * event);
+static GstFlowReturn gst_sctpsink_wait_event (GstBaseSink * sink,
+    GstEvent * event);
+static GstFlowReturn gst_sctpsink_prepare (GstBaseSink * sink,
+    GstBuffer * buffer);
+static GstFlowReturn gst_sctpsink_prepare_list (GstBaseSink * sink,
+    GstBufferList * buffer_list);
+static GstFlowReturn gst_sctpsink_preroll (GstBaseSink * sink,
+    GstBuffer * buffer);
+static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink,
+    GstBuffer * buffer);
+static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink,
+    GstBufferList * buffer_list);
+
 enum
 {
-  /* FILL ME */
-  LAST_SIGNAL
+  PROP_0
 };
 
-enum
-{
-  PROP_0,
-  PROP_SILENT
-};
+/* pad templates */
 
-/* the capabilities of the inputs and outputs.
- *
- * describe the real formats here.
- */
-static GstStaticPadTemplate sink_factory = GST_STATIC_PAD_TEMPLATE ("sink",
+static GstStaticPadTemplate gst_sctpsink_sink_template =
+GST_STATIC_PAD_TEMPLATE ("sink",
     GST_PAD_SINK,
     GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("ANY")
+    GST_STATIC_CAPS ("any")
     );
 
-#define gst_sctp_sink_parent_class parent_class
-G_DEFINE_TYPE (GstSctpSink, gst_sctp_sink, GST_TYPE_BASE_SINK);
 
-static void gst_sctp_sink_set_property (GObject * object, guint prop_id,
-    const GValue * value, GParamSpec * pspec);
-static void gst_sctp_sink_get_property (GObject * object, guint prop_id,
-    GValue * value, GParamSpec * pspec);
+/* class initializa[con */
 
-static gboolean gst_sctp_sink_sink_event (GstPad * pad, GstObject * parent, GstEvent * event);
-static GstFlowReturn gst_sctp_sink_chain (GstPad * pad, GstObject * parent, GstBuffer * buf);
+G_DEFINE_TYPE_WITH_CODE (GstSctpSink, gst_sctpsink, GST_TYPE_BASE_SINK,
+    GST_DEBUG_CATEGORY_INIT (gst_sctpsink_debug_category, "sctpsink", 0,
+        "debug category for sctpsink element"));
 
-/* GObject vmethod implementations */
-
-/* initialize the sctpsink's class */
 static void
-gst_sctp_sink_class_init (GstSctpSinkClass * klass)
+gst_sctpsink_class_init (GstSctpSinkClass * klass)
 {
-  GObjectClass *gobject_class;
-  GstElementClass *gstelement_class;
+   GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
+   GstBaseSinkClass *base_sink_class = GST_BASE_SINK_CLASS (klass);
 
-  gobject_class = (GObjectClass *) klass;
-  gstelement_class = (GstElementClass *) klass;
+   /* Setting up pads and setting metadata should be moved to
+      base_class_init if you intend to subclass this class. */
+   gst_element_class_add_pad_template (GST_ELEMENT_CLASS (klass),
+         gst_static_pad_template_get (&gst_sctpsink_sink_template));
 
-  gobject_class->set_property = gst_sctp_sink_set_property;
-  gobject_class->get_property = gst_sctp_sink_get_property;
+   gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
+         "FIXME Long name", "Generic", "FIXME Description",
+         "FIXME <fixme@example.com>");
 
-  g_object_class_install_property (gobject_class, PROP_SILENT,
-      g_param_spec_boolean ("silent", "Silent", "Produce verbose output ?",
-          FALSE, G_PARAM_READWRITE));
+   gobject_class->set_property = gst_sctpsink_set_property;
+   gobject_class->get_property = gst_sctpsink_get_property;
+   gobject_class->dispose = gst_sctpsink_dispose;
+   gobject_class->finalize = gst_sctpsink_finalize;
+   base_sink_class->get_caps = gst_sctpsink_get_caps;
+   base_sink_class->set_caps = gst_sctpsink_set_caps;
+   base_sink_class->fixate = gst_sctpsink_fixate;
+   base_sink_class->activate_pull = gst_sctpsink_activate_pull;
+   base_sink_class->get_times = gst_sctpsink_get_times;
+   base_sink_class->propose_allocation = gst_sctpsink_propose_allocation;
+   base_sink_class->start = gst_sctpsink_start;
+   base_sink_class->stop = gst_sctpsink_stop;
+   base_sink_class->unlock = gst_sctpsink_unlock;
+   base_sink_class->unlock_stop = gst_sctpsink_unlock_stop;
+   base_sink_class->query = gst_sctpsink_query;
+   base_sink_class->event = gst_sctpsink_event;
+   base_sink_class->wait_event = gst_sctpsink_wait_event;
+   base_sink_class->prepare = gst_sctpsink_prepare;
+   base_sink_class->prepare_list = gst_sctpsink_prepare_list;
+   base_sink_class->preroll = gst_sctpsink_preroll;
+   base_sink_class->render = gst_sctpsink_render;
+   base_sink_class->render_list = gst_sctpsink_render_list;
 
-  gst_element_class_set_details_simple(gstelement_class,
-    "SctpSink",
-    "Stefan Lendl <ste.lendl@gmail.com");
-
-  gst_element_class_add_pad_template (gstelement_class,
-      gst_static_pad_template_get (&sink_factory));
-}
-
-/* initialize the new element
- * instantiate pads and add them to element
- * set pad calback functions
- * initialize instance structure
- */
-static void
-gst_sctp_sink_init (GstSctpSink * filter)
-{
-  filter->sinkpad = gst_pad_new_from_static_template (&sink_factory, "sink");
-  gst_pad_set_event_function (filter->sinkpad,
-                              GST_DEBUG_FUNCPTR(gst_sctp_sink_sink_event));
-  gst_pad_set_chain_function (filter->sinkpad,
-                              GST_DEBUG_FUNCPTR(gst_sctp_sink_chain));
-  GST_PAD_SET_PROXY_CAPS (filter->sinkpad);
-  gst_element_add_pad (GST_ELEMENT (filter), filter->sinkpad);
-
-  filter->silent = FALSE;
 }
 
 static void
-gst_sctp_sink_set_property (GObject * object, guint prop_id,
+gst_sctpsink_init (GstSctpSink * sctpsink)
+{
+   GstPad *sinkpad = GST_BASE_SINK_PAD(sctpsink);
+   g_print("name: %s",GST_PAD_NAME(sinkpad));
+
+}
+
+void
+gst_sctpsink_set_property (GObject * object, guint property_id,
     const GValue * value, GParamSpec * pspec)
 {
-  GstSctpSink *filter = GST_SCTPSINK (object);
+  GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
-  switch (prop_id) {
-    case PROP_SILENT:
-      filter->silent = g_value_get_boolean (value);
-      break;
+  GST_DEBUG_OBJECT (sctpsink, "set_property");
+
+  switch (property_id) {
     default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
   }
 }
 
-static void
-gst_sctp_sink_get_property (GObject * object, guint prop_id,
+void
+gst_sctpsink_get_property (GObject * object, guint property_id,
     GValue * value, GParamSpec * pspec)
 {
-  GstSctpSink *filter = GST_SCTPSINK (object);
+  GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
-  switch (prop_id) {
-    case PROP_SILENT:
-      g_value_set_boolean (value, filter->silent);
-      break;
+  GST_DEBUG_OBJECT (sctpsink, "get_property");
+
+  switch (property_id) {
     default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, prop_id, pspec);
+      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
   }
 }
 
-/* GstElement vmethod implementations */
-
-/* this function handles sink events */
-static gboolean
-gst_sctp_sink_sink_event (GstPad * pad, GstObject * parent, GstEvent * event)
+void
+gst_sctpsink_dispose (GObject * object)
 {
-  GstSctpSink *filter;
-  gboolean ret;
+  GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
-  filter = GST_SCTPSINK (parent);
+  GST_DEBUG_OBJECT (sctpsink, "dispose");
 
-  GST_LOG_OBJECT (filter, "Received %s event: %" GST_PTR_FORMAT,
-      GST_EVENT_TYPE_NAME (event), event);
+  /* clean up as possible.  may be called multiple times */
 
-  switch (GST_EVENT_TYPE (event)) {
-    case GST_EVENT_CAPS:
-    {
-      GstCaps * caps;
-
-      gst_event_parse_caps (event, &caps);
-      /* do something with the caps */
-
-      /* and forward */
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-    }
-    default:
-      ret = gst_pad_event_default (pad, parent, event);
-      break;
-  }
-  return ret;
+  G_OBJECT_CLASS (gst_sctpsink_parent_class)->dispose (object);
 }
 
-/* chain function
- * this function does the actual processing
- */
+void
+gst_sctpsink_finalize (GObject * object)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (object);
+
+  GST_DEBUG_OBJECT (sctpsink, "finalize");
+
+  /* clean up object here */
+
+  G_OBJECT_CLASS (gst_sctpsink_parent_class)->finalize (object);
+}
+
+static GstCaps *
+gst_sctpsink_get_caps (GstBaseSink * sink, GstCaps * filter)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "get_caps");
+
+  return NULL;
+}
+
+/* notify subclass of new caps */
+static gboolean
+gst_sctpsink_set_caps (GstBaseSink * sink, GstCaps * caps)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "set_caps");
+
+  return TRUE;
+}
+
+/* fixate sink caps during pull-mode negotiation */
+static GstCaps *
+gst_sctpsink_fixate (GstBaseSink * sink, GstCaps * caps)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "fixate");
+
+  return NULL;
+}
+
+/* start or stop a pulling thread */
+static gboolean
+gst_sctpsink_activate_pull (GstBaseSink * sink, gboolean active)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "activate_pull");
+
+  return TRUE;
+}
+
+/* get the start and end times for syncing on this buffer */
+static void
+gst_sctpsink_get_times (GstBaseSink * sink, GstBuffer * buffer,
+    GstClockTime * start, GstClockTime * end)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "get_times");
+
+}
+
+/* propose allocation parameters for upstream */
+static gboolean
+gst_sctpsink_propose_allocation (GstBaseSink * sink, GstQuery * query)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "propose_allocation");
+
+  return TRUE;
+}
+
+/* start and stop processing, ideal for opening/closing the resource */
+static gboolean
+gst_sctpsink_start (GstBaseSink * sink)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "start");
+
+  return TRUE;
+}
+
+static gboolean
+gst_sctpsink_stop (GstBaseSink * sink)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "stop");
+
+  return TRUE;
+}
+
+/* unlock any pending access to the resource. subclasses should unlock
+ * any function ASAP. */
+static gboolean
+gst_sctpsink_unlock (GstBaseSink * sink)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "unlock");
+
+  return TRUE;
+}
+
+/* Clear a previously indicated unlock request not that unlocking is
+ * complete. Sub-classes should clear any command queue or indicator they
+ * set during unlock */
+static gboolean
+gst_sctpsink_unlock_stop (GstBaseSink * sink)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "unlock_stop");
+
+  return TRUE;
+}
+
+/* notify subclass of query */
+static gboolean
+gst_sctpsink_query (GstBaseSink * sink, GstQuery * query)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "query");
+
+  return TRUE;
+}
+
+/* notify subclass of event */
+static gboolean
+gst_sctpsink_event (GstBaseSink * sink, GstEvent * event)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "event");
+
+  return TRUE;
+}
+
+/* wait for eos or gap, subclasses should chain up to parent first */
 static GstFlowReturn
-gst_sctp_sink_chain (GstPad * pad, GstObject * parent, GstBuffer * buf)
+gst_sctpsink_wait_event (GstBaseSink * sink, GstEvent * event)
 {
-  GstSctpSink *filter;
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
-  filter = GST_SCTPSINK (parent);
+  GST_DEBUG_OBJECT (sctpsink, "wait_event");
 
-  if (filter->silent == FALSE)
-    g_print ("I'm plugged, therefore I'm in.\n");
-
-  /* just push out the incoming buffer without touching it */
-  /* return gst_pad_push (filter->srcpad, buf); */
+  return GST_FLOW_OK;
 }
 
-
-/* entry point to initialize the plug-in
- * initialize the plug-in itself
- * register the element factories and other features
- */
-static gboolean
-sctpsink_init (GstPlugin * sctpsink)
+/* notify subclass of buffer or list before doing sync */
+static GstFlowReturn
+gst_sctpsink_prepare (GstBaseSink * sink, GstBuffer * buffer)
 {
-  /* debug category for fltering log messages
-   *
-   * exchange the string 'Template sctpsink' with your description
-   */
-  GST_DEBUG_CATEGORY_INIT (gst_sctp_sink_debug, "sctpsink",
-      0, "Template sctpsink");
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
-/* TODO: init usrsctp association. */
+  GST_DEBUG_OBJECT (sctpsink, "prepare");
 
-  return gst_element_register (sctpsink, "sctpsink", GST_RANK_NONE,
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn
+gst_sctpsink_prepare_list (GstBaseSink * sink, GstBufferList * buffer_list)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "prepare_list");
+
+  return GST_FLOW_OK;
+}
+
+/* notify subclass of preroll buffer or real buffer */
+static GstFlowReturn
+gst_sctpsink_preroll (GstBaseSink * sink, GstBuffer * buffer)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "preroll");
+
+  return GST_FLOW_OK;
+}
+
+static GstFlowReturn
+gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "render");
+
+  return GST_FLOW_OK;
+}
+
+/* Render a BufferList */
+static GstFlowReturn
+gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list)
+{
+  GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+
+  GST_DEBUG_OBJECT (sctpsink, "render_list");
+
+  return GST_FLOW_OK;
+}
+
+static gboolean
+plugin_init (GstPlugin * plugin)
+{
+
+  /* FIXME Remember to set the rank if it's an element that is meant
+     to be autoplugged by decodebin. */
+  return gst_element_register (plugin, "sctpsink", GST_RANK_NONE,
       GST_TYPE_SCTPSINK);
 }
 
-/* PACKAGE: this is usually set by autotools depending on some _INIT macro
- * in configure.ac and then written into and defined in config.h, but we can
- * just set it ourselves here in case someone doesn't use autotools to
- * compile this code. GST_PLUGIN_DEFINE needs PACKAGE to be defined.
- */
+/* FIXME: these are normally defined by the GStreamer build system.
+   If you are creating an element to be included in gst-plugins-*,
+   remove these, as they're always defined.  Otherwise, edit as
+   appropriate for your external plugin package. */
+#ifndef VERSION
+#define VERSION "0.0.FIXME"
+#endif
 #ifndef PACKAGE
-#define PACKAGE "myfirstsctpsink"
+#define PACKAGE "FIXME_package"
+#endif
+#ifndef PACKAGE_NAME
+#define PACKAGE_NAME "FIXME_package_name"
+#endif
+#ifndef GST_PACKAGE_ORIGIN
+#define GST_PACKAGE_ORIGIN "http://FIXME.org/"
 #endif
 
-/* gstreamer looks for this structure to register sctpsinks
- *
- * exchange the string 'Template sctpsink' with your sctpsink description
- */
-GST_PLUGIN_DEFINE (
-    GST_VERSION_MAJOR,
+GST_PLUGIN_DEFINE (GST_VERSION_MAJOR,
     GST_VERSION_MINOR,
     sctpsink,
-    "Template sctpsink",
-    sctpsink_init,
-    VERSION,
-    "LGPL",
-    "GStreamer",
-    "http://gstreamer.net/"
-)
+    "SCTP sink :D",
+    plugin_init, VERSION, "LGPL", PACKAGE_NAME, GST_PACKAGE_ORIGIN)
