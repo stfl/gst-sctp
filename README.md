@@ -10,12 +10,12 @@ depends on: libusrsctp github.com/sctplab/usrsctp
 build **libusrsctp** with cmake
 
 ```bash
-mkdir buildusrsctp
-cd buildusrsctp
-cmake ../usrsctp/usrsctplib
+mkdir usrsctp/build
+cd usrsctp/build/
+cmake ../usrsctplib
 cmake --build .
 
-sudo make install
+# sudo make install
 ```
 
 build **examples** with *meson.build* and *ninja*
@@ -33,8 +33,8 @@ sudo ninja install
 
 ```bash
 export LD_LIBRARY_PATH=/path/to/buildusrsctp:${LD_LIBRARY_PATH}
-sudo LD_LIBRARY_PATH=/path/to/buildusrsctp ./echo_server
-sudo LD_LIBRARY_PATH=/path/to/buildusrsctp ./client 127.0.0.1 7
+sudo LD_LIBRARY_PATH=/path/to/usrsctp/build ./echo_server
+sudo LD_LIBRARY_PATH=/path/to/usrsctp/build ./client 127.0.0.1 7
 ```
 
 when *installed* with make install
