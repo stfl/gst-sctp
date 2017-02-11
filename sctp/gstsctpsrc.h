@@ -49,3 +49,5 @@ GType gst_sctpsrc_get_type (void);
 G_END_DECLS
 
 #endif
+
+// vim: ft=c

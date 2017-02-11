@@ -1,6 +1,6 @@
 sctp_sources = [
       'gstsctp.c',
-      # 'gstsctpsrc.c',
+      'gstsctpsrc.c',
       'gstsctpsink.c'
       ]
 
