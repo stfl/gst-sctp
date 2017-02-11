@@ -1,8 +1,26 @@
 
 " make clang-chack in neomake find the compile_commands.json created by meson.build
+let g:neomake_ninja_maker = {
+         \ 'exe' : 'ninja',
+         \ 'cwd' : g:localvimrc_script_dir.'/build',
+         \ }
+         " \ 'args' : '-v',
+
 let g:neomake_c_clangcheck_args = ['%:p', '-p', g:localvimrc_script_dir.'/build']
 let g:neomake_c_enabled_makers = ['clangcheck']
+let g:neomake_enabled_makers = ['ninja']
+
 
 " add compile_commands.json to deoplete-clang completion
 let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
 
+" make vim not confuse cpp/c
+au MyAutoCmd BufNewFile,BufRead *.[ch] set filetype=c
+
+autocmd MyAutoCmd BufWritePost *.[c] Neomake! ninja
+
+" :cnf   > first error in qf
+" :cn    > quickfix next
+" :cN    > quickfix prev
+" :copen > open quickfix window
+" :ccl   > close qf window
