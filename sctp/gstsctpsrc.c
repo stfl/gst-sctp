@@ -95,7 +95,8 @@ GST_STATIC_PAD_TEMPLATE ("src",
 /* class initialization */
 
 G_DEFINE_TYPE_WITH_CODE (GstSctpSrc, gst_sctpsrc, GST_TYPE_BASE_SRC,
-    GST_DEBUG_CATEGORY_INIT (gst_sctpsrc_debug_category, "sctpsrc", 0,
+    GST_DEBUG_CATEGORY_INIT (gst_sctpsrc_debug_category, "sctpsrc",
+       GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_BLUE | GST_DEBUG_BOLD,
         "debug category for sctpsrc element"));
 
 static void

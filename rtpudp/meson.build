@@ -1,2 +1,9 @@
-executable('rtpsend', 'gstRtpSend.c', dependencies : [gst_dep, gio_dep])
-executable('rtprecv', 'gstRtpReceive.c', dependencies : [gst_dep, gio_dep])
+executable('rtpsend', 'gstRtpSend.c',
+      dependencies : [gst_dep, gio_dep],
+      c_args : [gst_args, wError_args],
+      )
+
+executable('rtprecv', 'gstRtpReceive.c',
+      dependencies : [gst_dep, gio_dep],
+      c_args : [gst_args, wError_args],
+      )

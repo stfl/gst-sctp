@@ -37,6 +37,38 @@ struct _GstSctpSink
 {
   GstBaseSink base_sctpsink;
 
+  /* properties */
+  gchar     *address;
+  gchar     *host;
+  gint       port;
+  /* gint       ttl; */
+  /* gint       buffer_size; */
+  /* guint64    timeout; */
+  /* gint       skip_first_bytes; */
+
+  gboolean  udp_encaps;
+  gint      udp_encaps_port_src;
+  gint      udp_encaps_port_dest;
+
+  /* our sockets */
+  /* GSocket   *used_socket; */
+  /* GInetSocketAddress *addr; */
+  /* gboolean   external_socket; */
+
+  /* gboolean   made_cancel_fd; */
+  /* GCancellable *cancellable; */
+
+  /* memory management */
+  /* GstAllocator *allocator; */
+  /* GstAllocationParams params; */
+
+  /* GstMemory   *mem; */
+  /* GstMapInfo   map; */
+  /* GstMemory   *mem_max; */
+  /* GstMapInfo   map_max; */
+  /* GInputVector vec[2]; */
+
+  /* gchar     *uri; */
 };
 
 struct _GstSctpSinkClass

@@ -1,4 +1,4 @@
-/* _GstRtpSctpSender
+/* _GstSctpSinkTest
  * Copyright (C) 2016 FIXME <fixme@example.com>
  * Copyright (C) 2010 Entropy Wave Inc
  *
@@ -24,15 +24,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <gst/gst.h>
 #include <stdlib.h>
 #include <glib.h>
 
-#define GETTEXT_PACKAGE "RtpSctpSender"
+#define GETTEXT_PACKAGE "SctpSinkTest"
 
 
-typedef struct __GstRtpSctpSender _GstRtpSctpSender;
-struct __GstRtpSctpSender
+typedef struct __GstSctpSinkTest _GstSctpSinkTest;
+struct __GstSctpSinkTest
 {
    GstElement *pipeline;
    GstBus *bus;
@@ -45,14 +49,13 @@ struct __GstRtpSctpSender
    guint timer_id;
 };
 
-_GstRtpSctpSender *gst_RtpSctpSender_new (void);
-void gst_RtpSctpSender_free (_GstRtpSctpSender *RtpSctpSender);
-void gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender *RtpSctpSender);
-void gst_RtpSctpSender_create_pipeline_playbin (_GstRtpSctpSender *RtpSctpSender, const char *uri);
-void gst_RtpSctpSender_start (_GstRtpSctpSender *RtpSctpSender);
-void gst_RtpSctpSender_stop (_GstRtpSctpSender *RtpSctpSender);
+_GstSctpSinkTest *gst_SctpSinkTest_new (void);
+void gst_SctpSinkTest_free (_GstSctpSinkTest *SctpSinkTest);
+void gst_SctpSinkTest_create_pipeline (_GstSctpSinkTest *SctpSinkTest);
+void gst_SctpSinkTest_start (_GstSctpSinkTest *SctpSinkTest);
+void gst_SctpSinkTest_stop (_GstSctpSinkTest *SctpSinkTest);
 
-static gboolean gst_RtpSctpSender_handle_message (GstBus *bus,
+static gboolean gst_SctpSinkTest_handle_message (GstBus *bus,
       GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
 
@@ -71,7 +74,7 @@ main (int argc, char *argv[])
 {
    GError *error = NULL;
    GOptionContext *context;
-   _GstRtpSctpSender *RtpSctpSender;
+   _GstSctpSinkTest *SctpSinkTest;
    GMainLoop *main_loop;
 
    context = g_option_context_new ("- FIXME");
@@ -83,7 +86,7 @@ main (int argc, char *argv[])
    }
    g_option_context_free (context);
 
-   RtpSctpSender = gst_RtpSctpSender_new ();
+   SctpSinkTest = gst_SctpSinkTest_new ();
 
    /* if (argc > 1) { */
    /*    gchar *uri; */
@@ -92,16 +95,16 @@ main (int argc, char *argv[])
    /*    } else { */
    /*       uri = g_filename_to_uri (argv[1], NULL, NULL); */
    /*    } */
-   /*    gst_RtpSctpSender_create_pipeline_playbin (RtpSctpSender, uri); */
+   /*    gst_SctpSinkTest_create_pipeline_playbin (SctpSinkTest, uri); */
    /*    g_free (uri); */
    /* } else { */
-      gst_RtpSctpSender_create_pipeline (RtpSctpSender);
+      gst_SctpSinkTest_create_pipeline (SctpSinkTest);
    /* } */
 
-   gst_RtpSctpSender_start (RtpSctpSender);
+   gst_SctpSinkTest_start (SctpSinkTest);
 
    main_loop = g_main_loop_new (NULL, TRUE);
-   RtpSctpSender->main_loop = main_loop;
+   SctpSinkTest->main_loop = main_loop;
 
    g_main_loop_run (main_loop);
 
@@ -109,80 +112,85 @@ main (int argc, char *argv[])
 }
 
 
-_GstRtpSctpSender* gst_RtpSctpSender_new (void)
+_GstSctpSinkTest* gst_SctpSinkTest_new (void)
 {
-   _GstRtpSctpSender *RtpSctpSender;
+   _GstSctpSinkTest *SctpSinkTest;
 
-   RtpSctpSender = g_new0 (_GstRtpSctpSender, 1);
+   SctpSinkTest = g_new0 (_GstSctpSinkTest, 1);
 
-   return RtpSctpSender;
+   return SctpSinkTest;
 }
 
 void
-gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
+gst_SctpSinkTest_free (_GstSctpSinkTest * SctpSinkTest)
 {
-   if (RtpSctpSender->source_element) {
-      gst_object_unref (RtpSctpSender->source_element);
-      RtpSctpSender->source_element = NULL;
+   if (SctpSinkTest->source_element) {
+      gst_object_unref (SctpSinkTest->source_element);
+      SctpSinkTest->source_element = NULL;
    }
-   if (RtpSctpSender->sink_element) {
-      gst_object_unref (RtpSctpSender->sink_element);
-      RtpSctpSender->sink_element = NULL;
+   if (SctpSinkTest->sink_element) {
+      gst_object_unref (SctpSinkTest->sink_element);
+      SctpSinkTest->sink_element = NULL;
    }
 
-   if (RtpSctpSender->pipeline) {
-      gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
-      gst_object_unref (RtpSctpSender->pipeline);
-      RtpSctpSender->pipeline = NULL;
+   if (SctpSinkTest->pipeline) {
+      gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_NULL);
+      gst_object_unref (SctpSinkTest->pipeline);
+      SctpSinkTest->pipeline = NULL;
    }
-   g_free (RtpSctpSender);
+   g_free (SctpSinkTest);
 }
 
 void
-gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
+gst_SctpSinkTest_create_pipeline (_GstSctpSinkTest * SctpSinkTest)
 {
-   GstElement *pipeline, *source, *sink, *encoder, *rtppay;
-   /* GError *error = NULL; */
-
    /* create pipeline */
-   pipeline = gst_pipeline_new ("pipeline");
+   GstElement *pipeline = gst_pipeline_new ("pipeline");
 
    /* create element */
-   source = gst_element_factory_make("videotestsrc", "source");
-   if (!source) {
-      /* g_print ("Failed to create element of type 'videotestsrc'\n"); */
-      g_print ("Failed to create element of type 'videotestsrc'\n");
-      /* return -1; */
-   }
-   g_object_set(G_OBJECT(source),
-         /* "pattern",   GstVideoTestSrcPattern.GST_VIDEO_TEST_SRC_SNOW, */
-         "is-live",   TRUE,
-         NULL);
-   gst_util_set_object_arg(G_OBJECT(source), "pattern", "snow");
-   GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
-         "width", G_TYPE_INT, 1280,
-         "height", G_TYPE_INT, 720,
-         "framerate", GST_TYPE_FRACTION, 25, 1,
-         NULL);
+/*    source = gst_element_factory_make("videotestsrc", "source");
+ *    if (!source) {
+ *       [> g_print ("Failed to create element of type 'videotestsrc'\n"); <]
+ *       g_print ("Failed to create element of type 'videotestsrc'\n");
+ *       [> return -1; <]
+ *    }
+ *    g_object_set(G_OBJECT(source),
+ *          [> "pattern",   GstVideoTestSrcPattern.GST_VIDEO_TEST_SRC_SNOW, <]
+ *          "is-live",   TRUE,
+ *          NULL);
+ *    gst_util_set_object_arg(G_OBJECT(source), "pattern", "snow");
+ *    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
+ *          "width", G_TYPE_INT, 1280,
+ *          "height", G_TYPE_INT, 720,
+ *          "framerate", GST_TYPE_FRACTION, 25, 1,
+ *          NULL);
+ *
+ *    encoder = gst_element_factory_make("x264enc", "encoder");
+ *    if (!encoder) {
+ *       g_print ("failed to create element of type 'x264enc'\n");
+ *       [> return -1; <]
+ *    }
+ *    gst_util_set_object_arg(G_OBJECT(encoder), "tune", "zerolatency");
+ *    [> g_object_set(encoder, "tune", (GstX264EncTune)"zerolatency", NULL); <]
+ *
+ *
+ *    rtppay = gst_element_factory_make("rtph264pay", "rtppay");
+ *    if (!rtppay) {
+ *       g_print ("failed to create element of type 'rtph264pay'\n");
+ *       [> return -1; <]
+ *    } */
 
-   encoder = gst_element_factory_make("x264enc", "encoder");
-   if (!encoder) {
-      g_print ("failed to create element of type 'x264enc'\n");
-      /* return -1; */
-   }
-   gst_util_set_object_arg(G_OBJECT(encoder), "tune", "zerolatency");
-   /* g_object_set(encoder, "tune", (GstX264EncTune)"zerolatency", NULL); */
+   GstElement *source = gst_element_factory_make("fakesrc", "source");
+     if (!source) {
+        /* g_print ("Failed to create element of type 'videotestsrc'\n"); */
+        g_print ("Failed to create element of type 'fakesrc'\n");
+        /* return -1; */
+     }
 
 
-   rtppay = gst_element_factory_make("rtph264pay", "rtppay");
-   if (!rtppay) {
-      g_print ("failed to create element of type 'rtph264pay'\n");
-      /* return -1; */
-   }
-
-   sink = gst_element_factory_make("sctpsink", "sink");
+   GstElement *sink = gst_element_factory_make("sctpsink", "sink");
    if (!sink) {
-      g_print ("Failed to create element of type 'sctpsink'\n");
+      g_critical ("Failed to create element of type 'sctpsink'\n");
       /* return -1; */
    }
    g_object_set(sink,
@@ -190,134 +198,139 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
          "port",    9,
          NULL);
 
+
+   GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
+         "width", G_TYPE_INT, 1280,
+         "height", G_TYPE_INT, 720,
+         "framerate", GST_TYPE_FRACTION, 25, 1,
+         NULL);
+
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, encoder, rtppay, sink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, sink, NULL);
 
    /* link */
-   if (!gst_element_link_filtered(source, encoder, src_caps)) {
-      g_warning ("Failed to link filterd source and enocder!\n");
-   }
-   gst_caps_unref(src_caps);
-
-   if (!gst_element_link_many (encoder, rtppay, sink, NULL)) {
-      g_warning ("Failed to link elements!");
+   if (!gst_element_link_filtered(source, sink, src_caps)) {
+      g_warning ("Failed to link filterd!\n");
    }
 
+   /* if (!gst_element_link_many (source, sink, NULL)) { */
+   /*    g_warning ("Failed to link elements!"); */
+   /* } */
 
-   RtpSctpSender->pipeline = pipeline;
+
+   SctpSinkTest->pipeline = pipeline;
 
    gst_pipeline_set_auto_flush_bus (GST_PIPELINE (pipeline), FALSE);
-   RtpSctpSender->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
-   gst_bus_add_watch (RtpSctpSender->bus, gst_RtpSctpSender_handle_message,
-         RtpSctpSender);
+   SctpSinkTest->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+   gst_bus_add_watch (SctpSinkTest->bus, gst_SctpSinkTest_handle_message,
+         SctpSinkTest);
 
-   /* TODO: add stome other props here */
-   RtpSctpSender->source_element =
+   SctpSinkTest->source_element =
       gst_bin_get_by_name (GST_BIN (pipeline), "source");
-   RtpSctpSender->sink_element =
+   SctpSinkTest->sink_element =
       gst_bin_get_by_name (GST_BIN (pipeline), "sink");
 }
 
 void
-gst_RtpSctpSender_start (_GstRtpSctpSender * RtpSctpSender)
+gst_SctpSinkTest_start (_GstSctpSinkTest * SctpSinkTest)
 {
-   gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_READY);
+   gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_READY);
 
-   RtpSctpSender->timer_id = g_timeout_add (1000, onesecond_timer, RtpSctpSender);
+   SctpSinkTest->timer_id = g_timeout_add (1000, onesecond_timer, SctpSinkTest);
 }
 
 void
-gst_RtpSctpSender_stop (_GstRtpSctpSender * RtpSctpSender)
+gst_SctpSinkTest_stop (_GstSctpSinkTest * SctpSinkTest)
 {
-   gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
+   gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_NULL);
 
-   g_source_remove (RtpSctpSender->timer_id);
+   g_source_remove (SctpSinkTest->timer_id);
 }
 
 static void
-gst_RtpSctpSender_handle_eos (_GstRtpSctpSender * RtpSctpSender)
+gst_SctpSinkTest_handle_eos (_GstSctpSinkTest * SctpSinkTest)
 {
-   gst_RtpSctpSender_stop (RtpSctpSender);
+   gst_SctpSinkTest_stop (SctpSinkTest);
 }
 
 static void
-gst_RtpSctpSender_handle_error (_GstRtpSctpSender * RtpSctpSender,
+gst_SctpSinkTest_handle_error (_GstSctpSinkTest * SctpSinkTest,
       GError * error, const char *debug)
 {
    g_print ("error: %s\n", error->message);
-   gst_RtpSctpSender_stop (RtpSctpSender);
+   gst_SctpSinkTest_stop (SctpSinkTest);
 }
 
 static void
-gst_RtpSctpSender_handle_warning (_GstRtpSctpSender * RtpSctpSender,
+gst_SctpSinkTest_handle_warning (_GstSctpSinkTest * SctpSinkTest,
       GError * error, const char *debug)
 {
    g_print ("warning: %s\n", error->message);
 }
 
 static void
-gst_RtpSctpSender_handle_info (_GstRtpSctpSender * RtpSctpSender,
+gst_SctpSinkTest_handle_info (_GstSctpSinkTest * SctpSinkTest,
       GError * error, const char *debug)
 {
    g_print ("info: %s\n", error->message);
 }
 
 static void
-gst_RtpSctpSender_handle_null_to_ready (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_null_to_ready (_GstSctpSinkTest *
+      SctpSinkTest)
 {
-   gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_PAUSED);
+   gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_PAUSED);
 
 }
 
 static void
-gst_RtpSctpSender_handle_ready_to_paused (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_ready_to_paused (_GstSctpSinkTest *
+      SctpSinkTest)
 {
-   if (!RtpSctpSender->paused_for_buffering) {
-      gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_PLAYING);
+   if (!SctpSinkTest->paused_for_buffering) {
+      gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_PLAYING);
    }
 }
 
 static void
-gst_RtpSctpSender_handle_paused_to_playing (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_paused_to_playing (_GstSctpSinkTest *
+      SctpSinkTest)
 {
 
 }
 
 static void
-gst_RtpSctpSender_handle_playing_to_paused (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_playing_to_paused (_GstSctpSinkTest *
+      SctpSinkTest)
 {
 
 }
 
 static void
-gst_RtpSctpSender_handle_paused_to_ready (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_paused_to_ready (_GstSctpSinkTest *
+      SctpSinkTest)
 {
 
 }
 
 static void
-gst_RtpSctpSender_handle_ready_to_null (_GstRtpSctpSender *
-      RtpSctpSender)
+gst_SctpSinkTest_handle_ready_to_null (_GstSctpSinkTest *
+      SctpSinkTest)
 {
-   g_main_loop_quit (RtpSctpSender->main_loop);
+   g_main_loop_quit (SctpSinkTest->main_loop);
 
 }
 
 
 static gboolean
-gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
+gst_SctpSinkTest_handle_message (GstBus * bus, GstMessage * message,
       gpointer data)
 {
-   _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *) data;
+   _GstSctpSinkTest *SctpSinkTest = (_GstSctpSinkTest *) data;
 
    switch (GST_MESSAGE_TYPE (message)) {
       case GST_MESSAGE_EOS:
-         gst_RtpSctpSender_handle_eos (RtpSctpSender);
+         gst_SctpSinkTest_handle_eos (SctpSinkTest);
          break;
       case GST_MESSAGE_ERROR:
          {
@@ -325,7 +338,7 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_error (message, &error, &debug);
-            gst_RtpSctpSender_handle_error (RtpSctpSender, error, debug);
+            gst_SctpSinkTest_handle_error (SctpSinkTest, error, debug);
          }
          break;
       case GST_MESSAGE_WARNING:
@@ -334,7 +347,7 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_warning (message, &error, &debug);
-            gst_RtpSctpSender_handle_warning (RtpSctpSender, error, debug);
+            gst_SctpSinkTest_handle_warning (SctpSinkTest, error, debug);
          }
          break;
       case GST_MESSAGE_INFO:
@@ -343,7 +356,7 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_info (message, &error, &debug);
-            gst_RtpSctpSender_handle_info (RtpSctpSender, error, debug);
+            gst_SctpSinkTest_handle_info (SctpSinkTest, error, debug);
          }
          break;
       case GST_MESSAGE_TAG:
@@ -360,29 +373,29 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
             GstState oldstate, newstate, pending;
 
             gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
-            if (GST_ELEMENT (message->src) == RtpSctpSender->pipeline) {
+            if (GST_ELEMENT (message->src) == SctpSinkTest->pipeline) {
                if (verbose)
                   g_print ("state change from %s to %s\n",
                         gst_element_state_get_name (oldstate),
                         gst_element_state_get_name (newstate));
                switch (GST_STATE_TRANSITION (oldstate, newstate)) {
                   case GST_STATE_CHANGE_NULL_TO_READY:
-                     gst_RtpSctpSender_handle_null_to_ready (RtpSctpSender);
+                     gst_SctpSinkTest_handle_null_to_ready (SctpSinkTest);
                      break;
                   case GST_STATE_CHANGE_READY_TO_PAUSED:
-                     gst_RtpSctpSender_handle_ready_to_paused (RtpSctpSender);
+                     gst_SctpSinkTest_handle_ready_to_paused (SctpSinkTest);
                      break;
                   case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-                     gst_RtpSctpSender_handle_paused_to_playing (RtpSctpSender);
+                     gst_SctpSinkTest_handle_paused_to_playing (SctpSinkTest);
                      break;
                   case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-                     gst_RtpSctpSender_handle_playing_to_paused (RtpSctpSender);
+                     gst_SctpSinkTest_handle_playing_to_paused (SctpSinkTest);
                      break;
                   case GST_STATE_CHANGE_PAUSED_TO_READY:
-                     gst_RtpSctpSender_handle_paused_to_ready (RtpSctpSender);
+                     gst_SctpSinkTest_handle_paused_to_ready (SctpSinkTest);
                      break;
                   case GST_STATE_CHANGE_READY_TO_NULL:
-                     gst_RtpSctpSender_handle_ready_to_null (RtpSctpSender);
+                     gst_SctpSinkTest_handle_ready_to_null (SctpSinkTest);
                      break;
                   default:
                      if (verbose)
@@ -398,14 +411,14 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
             int percent;
             gst_message_parse_buffering (message, &percent);
             //g_print("buffering %d\n", percent);
-            if (!RtpSctpSender->paused_for_buffering && percent < 100) {
+            if (!SctpSinkTest->paused_for_buffering && percent < 100) {
                g_print ("pausing for buffing\n");
-               RtpSctpSender->paused_for_buffering = TRUE;
-               gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_PAUSED);
-            } else if (RtpSctpSender->paused_for_buffering && percent == 100) {
+               SctpSinkTest->paused_for_buffering = TRUE;
+               gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_PAUSED);
+            } else if (SctpSinkTest->paused_for_buffering && percent == 100) {
                g_print ("unpausing for buffing\n");
-               RtpSctpSender->paused_for_buffering = FALSE;
-               gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_PLAYING);
+               SctpSinkTest->paused_for_buffering = FALSE;
+               gst_element_set_state (SctpSinkTest->pipeline, GST_STATE_PLAYING);
             }
          }
          break;
@@ -443,7 +456,7 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
 static gboolean
 onesecond_timer (gpointer priv)
 {
-   //_GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
+   //_GstSctpSinkTest *SctpSinkTest = (_GstSctpSinkTest *)priv;
 
    g_print (".\n");
 

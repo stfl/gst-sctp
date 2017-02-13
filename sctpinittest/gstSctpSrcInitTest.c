@@ -1,4 +1,4 @@
-/* GstRtpUdpReceiver
+/* GstRtpSctpReceiver
  * Copyright (C) 2016 FIXME <fixme@example.com>
  * Copyright (C) 2010 Entropy Wave Inc
  *
@@ -24,15 +24,19 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#ifdef HAVE_CONFIG_H
+#include "config.h"
+#endif
+
 #include <gst/gst.h>
 #include <stdlib.h>
 #include <glib.h>
 
-#define GETTEXT_PACKAGE "RtpUdpReceiver"
+#define GETTEXT_PACKAGE "RtpSctpReceiver"
 
 
-typedef struct _GstRtpUdpReceiver GstRtpUdpReceiver;
-struct _GstRtpUdpReceiver
+typedef struct _GstRtpSctpReceiver GstRtpSctpReceiver;
+struct _GstRtpSctpReceiver
 {
    GstElement *pipeline;
    GstBus *bus;
@@ -45,14 +49,14 @@ struct _GstRtpUdpReceiver
    guint timer_id;
 };
 
-GstRtpUdpReceiver *gst_RtpUdpReceiver_new (void);
-void gst_RtpUdpReceiver_free (GstRtpUdpReceiver *RtpUdpReceiver);
-void gst_RtpUdpReceiver_create_pipeline (GstRtpUdpReceiver *RtpUdpReceiver);
-void gst_RtpUdpReceiver_create_pipeline_playbin (GstRtpUdpReceiver *RtpUdpReceiver, const char *uri);
-void gst_RtpUdpReceiver_start (GstRtpUdpReceiver *RtpUdpReceiver);
-void gst_RtpUdpReceiver_stop (GstRtpUdpReceiver *RtpUdpReceiver);
+GstRtpSctpReceiver *gst_RtpSctpReceiver_new (void);
+void gst_RtpSctpReceiver_free (GstRtpSctpReceiver *RtpSctpReceiver);
+void gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver *RtpSctpReceiver);
+void gst_RtpSctpReceiver_create_pipeline_playbin (GstRtpSctpReceiver *RtpSctpReceiver, const char *uri);
+void gst_RtpSctpReceiver_start (GstRtpSctpReceiver *RtpSctpReceiver);
+void gst_RtpSctpReceiver_stop (GstRtpSctpReceiver *RtpSctpReceiver);
 
-static gboolean gst_RtpUdpReceiver_handle_message (GstBus *bus,
+static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus,
       GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
 
@@ -71,7 +75,7 @@ main (int argc, char *argv[])
 {
    GError *error = NULL;
    GOptionContext *context;
-   GstRtpUdpReceiver *RtpUdpReceiver;
+   GstRtpSctpReceiver *RtpSctpReceiver;
    GMainLoop *main_loop;
 
    context = g_option_context_new ("- FIXME");
@@ -83,12 +87,12 @@ main (int argc, char *argv[])
    }
    g_option_context_free (context);
 
-   RtpUdpReceiver = gst_RtpUdpReceiver_new ();
-   gst_RtpUdpReceiver_create_pipeline (RtpUdpReceiver);
-   gst_RtpUdpReceiver_start (RtpUdpReceiver);
+   RtpSctpReceiver = gst_RtpSctpReceiver_new ();
+   gst_RtpSctpReceiver_create_pipeline (RtpSctpReceiver);
+   gst_RtpSctpReceiver_start (RtpSctpReceiver);
 
    main_loop = g_main_loop_new (NULL, TRUE);
-   RtpUdpReceiver->main_loop = main_loop;
+   RtpSctpReceiver->main_loop = main_loop;
 
    g_main_loop_run (main_loop);
 
@@ -96,37 +100,37 @@ main (int argc, char *argv[])
 }
 
 
-GstRtpUdpReceiver* gst_RtpUdpReceiver_new (void)
+GstRtpSctpReceiver* gst_RtpSctpReceiver_new (void)
 {
-   GstRtpUdpReceiver *RtpUdpReceiver;
+   GstRtpSctpReceiver *RtpSctpReceiver;
 
-   RtpUdpReceiver = g_new0 (GstRtpUdpReceiver, 1);
+   RtpSctpReceiver = g_new0 (GstRtpSctpReceiver, 1);
 
-   return RtpUdpReceiver;
+   return RtpSctpReceiver;
 }
 
 void
-gst_RtpUdpReceiver_free (GstRtpUdpReceiver * RtpUdpReceiver)
+gst_RtpSctpReceiver_free (GstRtpSctpReceiver * RtpSctpReceiver)
 {
-   if (RtpUdpReceiver->source_element) {
-      gst_object_unref (RtpUdpReceiver->source_element);
-      RtpUdpReceiver->source_element = NULL;
+   if (RtpSctpReceiver->source_element) {
+      gst_object_unref (RtpSctpReceiver->source_element);
+      RtpSctpReceiver->source_element = NULL;
    }
-   if (RtpUdpReceiver->sink_element) {
-      gst_object_unref (RtpUdpReceiver->sink_element);
-      RtpUdpReceiver->sink_element = NULL;
+   if (RtpSctpReceiver->sink_element) {
+      gst_object_unref (RtpSctpReceiver->sink_element);
+      RtpSctpReceiver->sink_element = NULL;
    }
 
-   if (RtpUdpReceiver->pipeline) {
-      gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_NULL);
-      gst_object_unref (RtpUdpReceiver->pipeline);
-      RtpUdpReceiver->pipeline = NULL;
+   if (RtpSctpReceiver->pipeline) {
+      gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_NULL);
+      gst_object_unref (RtpSctpReceiver->pipeline);
+      RtpSctpReceiver->pipeline = NULL;
    }
-   g_free (RtpUdpReceiver);
+   g_free (RtpSctpReceiver);
 }
 
 void
-gst_RtpUdpReceiver_create_pipeline (GstRtpUdpReceiver * RtpUdpReceiver)
+gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 {
    /* create pipeline */
    GstElement *pipeline = gst_pipeline_new ("pipeline");
@@ -186,7 +190,7 @@ gst_RtpUdpReceiver_create_pipeline (GstRtpUdpReceiver * RtpUdpReceiver)
 
    if (!gst_element_link(rtpdepay, decoder)) {
       g_critical ("Failed to link source and rtpdepay'\n");
-   } 
+   }
 
    if (!gst_element_link(decoder, videoconvert)) {
       g_critical ("Failed to link source and rtpdepay'\n");
@@ -205,119 +209,119 @@ gst_RtpUdpReceiver_create_pipeline (GstRtpUdpReceiver * RtpUdpReceiver)
     * g_print("%s\n", gst_caps_to_string(c_tmp));
     * g_object_unref(c_tmp); */
 
-   RtpUdpReceiver->pipeline = pipeline;
+   RtpSctpReceiver->pipeline = pipeline;
 
    gst_pipeline_set_auto_flush_bus (GST_PIPELINE (pipeline), FALSE);
-   RtpUdpReceiver->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
-   gst_bus_add_watch (RtpUdpReceiver->bus, gst_RtpUdpReceiver_handle_message,
-         RtpUdpReceiver);
+   RtpSctpReceiver->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
+   gst_bus_add_watch (RtpSctpReceiver->bus, gst_RtpSctpReceiver_handle_message,
+         RtpSctpReceiver);
 
-   RtpUdpReceiver->source_element =
+   RtpSctpReceiver->source_element =
       gst_bin_get_by_name (GST_BIN (pipeline), "source");
-   RtpUdpReceiver->sink_element =
+   RtpSctpReceiver->sink_element =
       gst_bin_get_by_name (GST_BIN (pipeline), "videosink");
 }
 
 void
-gst_RtpUdpReceiver_start (GstRtpUdpReceiver * RtpUdpReceiver)
+gst_RtpSctpReceiver_start (GstRtpSctpReceiver * RtpSctpReceiver)
 {
-   gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_READY);
+   gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_READY);
 
-   RtpUdpReceiver->timer_id = g_timeout_add (1000, onesecond_timer, RtpUdpReceiver);
+   RtpSctpReceiver->timer_id = g_timeout_add (1000, onesecond_timer, RtpSctpReceiver);
 }
 
 void
-gst_RtpUdpReceiver_stop (GstRtpUdpReceiver * RtpUdpReceiver)
+gst_RtpSctpReceiver_stop (GstRtpSctpReceiver * RtpSctpReceiver)
 {
-   gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_NULL);
+   gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_NULL);
 
-   g_source_remove (RtpUdpReceiver->timer_id);
+   g_source_remove (RtpSctpReceiver->timer_id);
 }
 
 static void
-gst_RtpUdpReceiver_handle_eos (GstRtpUdpReceiver * RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_eos (GstRtpSctpReceiver * RtpSctpReceiver)
 {
-   gst_RtpUdpReceiver_stop (RtpUdpReceiver);
+   gst_RtpSctpReceiver_stop (RtpSctpReceiver);
 }
 
 static void
-gst_RtpUdpReceiver_handle_error (GstRtpUdpReceiver * RtpUdpReceiver,
+gst_RtpSctpReceiver_handle_error (GstRtpSctpReceiver * RtpSctpReceiver,
       GError * error, const char *debug)
 {
    g_print ("error: %s\n", error->message);
-   gst_RtpUdpReceiver_stop (RtpUdpReceiver);
+   gst_RtpSctpReceiver_stop (RtpSctpReceiver);
 }
 
 static void
-gst_RtpUdpReceiver_handle_warning (GstRtpUdpReceiver * RtpUdpReceiver,
+gst_RtpSctpReceiver_handle_warning (GstRtpSctpReceiver * RtpSctpReceiver,
       GError * error, const char *debug)
 {
    g_print ("warning: %s\n", error->message);
 }
 
 static void
-gst_RtpUdpReceiver_handle_info (GstRtpUdpReceiver * RtpUdpReceiver,
+gst_RtpSctpReceiver_handle_info (GstRtpSctpReceiver * RtpSctpReceiver,
       GError * error, const char *debug)
 {
    g_print ("info: %s\n", error->message);
 }
 
 static void
-gst_RtpUdpReceiver_handle_null_to_ready (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_null_to_ready (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
-   gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_PAUSED);
+   gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_PAUSED);
 
 }
 
 static void
-gst_RtpUdpReceiver_handle_ready_to_paused (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_ready_to_paused (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
-   if (!RtpUdpReceiver->paused_for_buffering) {
-      gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_PLAYING);
+   if (!RtpSctpReceiver->paused_for_buffering) {
+      gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_PLAYING);
    }
 }
 
 static void
-gst_RtpUdpReceiver_handle_paused_to_playing (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_paused_to_playing (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
 
 }
 
 static void
-gst_RtpUdpReceiver_handle_playing_to_paused (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_playing_to_paused (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
 
 }
 
 static void
-gst_RtpUdpReceiver_handle_paused_to_ready (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_paused_to_ready (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
 
 }
 
 static void
-gst_RtpUdpReceiver_handle_ready_to_null (GstRtpUdpReceiver *
-      RtpUdpReceiver)
+gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
+      RtpSctpReceiver)
 {
-   g_main_loop_quit (RtpUdpReceiver->main_loop);
+   g_main_loop_quit (RtpSctpReceiver->main_loop);
 
 }
 
 
 static gboolean
-gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
+gst_RtpSctpReceiver_handle_message (GstBus * bus, GstMessage * message,
       gpointer data)
 {
-   GstRtpUdpReceiver *RtpUdpReceiver = (GstRtpUdpReceiver *) data;
+   GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *) data;
 
    switch (GST_MESSAGE_TYPE (message)) {
       case GST_MESSAGE_EOS:
-         gst_RtpUdpReceiver_handle_eos (RtpUdpReceiver);
+         gst_RtpSctpReceiver_handle_eos (RtpSctpReceiver);
          break;
       case GST_MESSAGE_ERROR:
          {
@@ -325,7 +329,7 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_error (message, &error, &debug);
-            gst_RtpUdpReceiver_handle_error (RtpUdpReceiver, error, debug);
+            gst_RtpSctpReceiver_handle_error (RtpSctpReceiver, error, debug);
          }
          break;
       case GST_MESSAGE_WARNING:
@@ -334,7 +338,7 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_warning (message, &error, &debug);
-            gst_RtpUdpReceiver_handle_warning (RtpUdpReceiver, error, debug);
+            gst_RtpSctpReceiver_handle_warning (RtpSctpReceiver, error, debug);
          }
          break;
       case GST_MESSAGE_INFO:
@@ -343,7 +347,7 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
             gchar *debug;
 
             gst_message_parse_info (message, &error, &debug);
-            gst_RtpUdpReceiver_handle_info (RtpUdpReceiver, error, debug);
+            gst_RtpSctpReceiver_handle_info (RtpSctpReceiver, error, debug);
          }
          break;
       case GST_MESSAGE_TAG:
@@ -360,29 +364,29 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
             GstState oldstate, newstate, pending;
 
             gst_message_parse_state_changed (message, &oldstate, &newstate, &pending);
-            if (GST_ELEMENT (message->src) == RtpUdpReceiver->pipeline) {
+            if (GST_ELEMENT (message->src) == RtpSctpReceiver->pipeline) {
                if (verbose)
                   g_print ("state change from %s to %s\n",
                         gst_element_state_get_name (oldstate),
                         gst_element_state_get_name (newstate));
                switch (GST_STATE_TRANSITION (oldstate, newstate)) {
                   case GST_STATE_CHANGE_NULL_TO_READY:
-                     gst_RtpUdpReceiver_handle_null_to_ready (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_null_to_ready (RtpSctpReceiver);
                      break;
                   case GST_STATE_CHANGE_READY_TO_PAUSED:
-                     gst_RtpUdpReceiver_handle_ready_to_paused (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_ready_to_paused (RtpSctpReceiver);
                      break;
                   case GST_STATE_CHANGE_PAUSED_TO_PLAYING:
-                     gst_RtpUdpReceiver_handle_paused_to_playing (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_paused_to_playing (RtpSctpReceiver);
                      break;
                   case GST_STATE_CHANGE_PLAYING_TO_PAUSED:
-                     gst_RtpUdpReceiver_handle_playing_to_paused (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_playing_to_paused (RtpSctpReceiver);
                      break;
                   case GST_STATE_CHANGE_PAUSED_TO_READY:
-                     gst_RtpUdpReceiver_handle_paused_to_ready (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_paused_to_ready (RtpSctpReceiver);
                      break;
                   case GST_STATE_CHANGE_READY_TO_NULL:
-                     gst_RtpUdpReceiver_handle_ready_to_null (RtpUdpReceiver);
+                     gst_RtpSctpReceiver_handle_ready_to_null (RtpSctpReceiver);
                      break;
                   default:
                      if (verbose)
@@ -398,14 +402,14 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
             int percent;
             gst_message_parse_buffering (message, &percent);
             //g_print("buffering %d\n", percent);
-            if (!RtpUdpReceiver->paused_for_buffering && percent < 100) {
+            if (!RtpSctpReceiver->paused_for_buffering && percent < 100) {
                g_print ("pausing for buffing\n");
-               RtpUdpReceiver->paused_for_buffering = TRUE;
-               gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_PAUSED);
-            } else if (RtpUdpReceiver->paused_for_buffering && percent == 100) {
+               RtpSctpReceiver->paused_for_buffering = TRUE;
+               gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_PAUSED);
+            } else if (RtpSctpReceiver->paused_for_buffering && percent == 100) {
                g_print ("unpausing for buffing\n");
-               RtpUdpReceiver->paused_for_buffering = FALSE;
-               gst_element_set_state (RtpUdpReceiver->pipeline, GST_STATE_PLAYING);
+               RtpSctpReceiver->paused_for_buffering = FALSE;
+               gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_PLAYING);
             }
          }
          break;
@@ -443,7 +447,7 @@ gst_RtpUdpReceiver_handle_message (GstBus * bus, GstMessage * message,
 static gboolean
 onesecond_timer (gpointer priv)
 {
-   //GstRtpUdpReceiver *RtpUdpReceiver = (GstRtpUdpReceiver *)priv;
+   //GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
 
    g_print (".\n");
 

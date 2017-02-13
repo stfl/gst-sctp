@@ -192,6 +192,9 @@ configure_file(input : 'config.h.meson',
     output : 'config.h',
     configuration : cdata)
 
+wError_args = ['-Werror']
+
 subdir('sctp')
 subdir('rtpudp')
 subdir('rtpsctp')
+subdir('sctpinittest/')
