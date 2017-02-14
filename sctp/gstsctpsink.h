@@ -41,15 +41,17 @@ struct _GstSctpSink
   gchar     *address;
   gchar     *host;
   gint       port;
+  gint       src_port;
   /* gint       ttl; */
   /* gint       buffer_size; */
   /* guint64    timeout; */
   /* gint       skip_first_bytes; */
 
   gboolean  udp_encaps;
-  gint      udp_encaps_port_src;
-  gint      udp_encaps_port_dest;
+  gint      udp_encaps_src_port;
+  gint      udp_encaps_port;
 
+  struct socket *sock;
   /* our sockets */
   /* GSocket   *used_socket; */
   /* GInetSocketAddress *addr; */

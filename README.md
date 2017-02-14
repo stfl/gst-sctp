@@ -32,14 +32,13 @@ sudo ninja install
 ## Run
 
 ```bash
-export LD_LIBRARY_PATH=/path/to/buildusrsctp:${LD_LIBRARY_PATH}
+export LD_LIBRARY_PATH=/home/slendl/Projects/gst/gst-sctp/usrsctp/build:${LD_LIBRARY_PATH}
+export GST_PLUGIN_PATH=/home/slendl/Projects/gst/gst-sctp/build
+
 sudo LD_LIBRARY_PATH=/path/to/usrsctp/build ./echo_server
 sudo LD_LIBRARY_PATH=/path/to/usrsctp/build ./client 127.0.0.1 7
-```
 
-when *installed* with make install
-
-```bash
-sudo LD_LIBRARY_PATH=/usr/local/lib/ ./client 127.0.0.1 7
-sudo LD_LIBRARY_PATH=/usr/local/lib/ ./echo_server
+sudo -E LD_LIBRARY_PATH=/home/slendl/Projects/gst/gst-sctp/usrsctp/build \
+   GST_DEBUG="3,basesink:4,sctpsink:6" \
+   ./build/rtpsctp/rtpsctpsend 2>&1
 ```

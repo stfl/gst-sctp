@@ -177,6 +177,9 @@ gst_args = ['-DHAVE_CONFIG_H']
 configinc = include_directories('.')
 # libsinc = include_directories('gst-libs')
 
+configure_file(input : 'config.h.meson',
+    output : 'config.h',
+    configuration : cdata)
 
 ##### include usrsctp ########
 
@@ -188,11 +191,12 @@ usrsctp_build_path = join_paths(meson.source_root(), 'usrsctp/build')
 message('expecting libusrsctp at: ' + usrsctp_build_path)
 usrsctp_dep = cc.find_library('libusrsctp', dirs : usrsctp_build_path)
 
-configure_file(input : 'config.h.meson',
-    output : 'config.h',
-    configuration : cdata)
-
-wError_args = ['-Werror']
+Werror_args = [ '-Werror',
+                '-Wno-error=unused-variable',
+                '-Wno-error=unused-function',
+                '-Wno-error=unused-label',
+                '-Wno-error=unused-value' ]
+usrsctp_debug_args = ['-DSCTP_DEBUG']
 
 subdir('sctp')
 subdir('rtpudp')
