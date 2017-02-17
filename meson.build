@@ -38,22 +38,22 @@ endif
 cdata = configuration_data()
 
 check_headers = [
-    ['HAVE_DLFCN_H', 'dlfcn.h'],
-    ['HAVE_FCNTL_H', 'fcntl.h'],
-    ['HAVE_INTTYPES_H', 'inttypes.h'],
-    ['HAVE_MEMORY_H', 'memory.h'],
-    ['HAVE_PROCESS_H', 'process.h'],
-    ['HAVE_STDINT_H', 'stdint.h'],
-    ['HAVE_STDLIB_H', 'stdlib.h'],
-    ['HAVE_STRINGS_H', 'strings.h'],
-    ['HAVE_STRING_H', 'string.h'],
-    ['HAVE_SYS_IOCTL_H', 'sys/ioctl.h'],
-    ['HAVE_SYS_PARAM_H', 'sys/param.h'],
+    ['HAVE_DLFCN_H',      'dlfcn.h'],
+    ['HAVE_FCNTL_H',      'fcntl.h'],
+    ['HAVE_INTTYPES_H',   'inttypes.h'],
+    ['HAVE_MEMORY_H',     'memory.h'],
+    ['HAVE_PROCESS_H',    'process.h'],
+    ['HAVE_STDINT_H',     'stdint.h'],
+    ['HAVE_STDLIB_H',     'stdlib.h'],
+    ['HAVE_STRINGS_H',    'strings.h'],
+    ['HAVE_STRING_H',     'string.h'],
+    ['HAVE_SYS_IOCTL_H',  'sys/ioctl.h'],
+    ['HAVE_SYS_PARAM_H',  'sys/param.h'],
     ['HAVE_SYS_SOCKET_H', 'sys/socket.h'],
-    ['HAVE_SYS_STAT_H', 'sys/stat.h'],
-    ['HAVE_SYS_TIME_H', 'sys/time.h'],
-    ['HAVE_SYS_TYPES_H', 'sys/types.h'],
-    ['HAVE_UNISTD_H', 'unistd.h'],
+    ['HAVE_SYS_STAT_H',   'sys/stat.h'],
+    ['HAVE_SYS_TIME_H',   'sys/time.h'],
+    ['HAVE_SYS_TYPES_H',  'sys/types.h'],
+    ['HAVE_UNISTD_H',     'unistd.h'],
     ]
 
 foreach h : check_headers
@@ -112,23 +112,23 @@ foreach f : check_functions
   endif
 endforeach
 
-cdata.set('SIZEOF_CHAR', cc.sizeof('char'))
-cdata.set('SIZEOF_INT', cc.sizeof('int'))
-cdata.set('SIZEOF_LONG', cc.sizeof('long'))
+cdata.set('SIZEOF_CHAR',  cc.sizeof('char'))
+cdata.set('SIZEOF_INT',   cc.sizeof('int'))
+cdata.set('SIZEOF_LONG',  cc.sizeof('long'))
 cdata.set('SIZEOF_SHORT', cc.sizeof('short'))
 cdata.set('SIZEOF_VOIDP', cc.sizeof('void*'))
 
 # Here be fixmes.
 # FIXME: check if this is correct
-cdata.set('HAVE_CPU_X86_64', host_machine.cpu() == 'amd64')
-cdata.set('HAVE_GCC_ASM', cc.get_id() != 'msvc')
-cdata.set('VERSION', '"@0@"'.format(gst_version))
-cdata.set('PACKAGE_VERSION', '"@0@"'.format(gst_version))
-cdata.set('GST_LICENSE', '"LGPL"')
-cdata.set('PACKAGE', '"gst-plugins-good"')
-cdata.set('GETTEXT_PACKAGE', '"gst-plugins-good-1.0"')
-cdata.set('PACKAGE_NAME', '"GStreamer Good Plug-ins"')
-cdata.set('GST_PACKAGE_NAME', '"GStreamer Good Plug-ins"')
+cdata.set('HAVE_CPU_X86_64',    host_machine.cpu() == 'amd64')
+cdata.set('HAVE_GCC_ASM',       cc.get_id() != 'msvc')
+cdata.set('VERSION',            '"@0@"'.format(gst_version))
+cdata.set('PACKAGE_VERSION',    '"@0@"'.format(gst_version))
+cdata.set('GST_LICENSE',        '"LGPL"')
+cdata.set('PACKAGE',            '"gst-plugins-good"')
+cdata.set('GETTEXT_PACKAGE',    '"gst-plugins-good-1.0"')
+cdata.set('PACKAGE_NAME',       '"GStreamer Good Plug-ins"')
+cdata.set('GST_PACKAGE_NAME',   '"GStreamer Good Plug-ins"')
 cdata.set('GST_PACKAGE_ORIGIN', '"Unknown package origin"') # FIXME: make configurable
 
 # Mandatory GST deps
@@ -177,28 +177,72 @@ gst_args = ['-DHAVE_CONFIG_H']
 configinc = include_directories('.')
 # libsinc = include_directories('gst-libs')
 
+
+##### include usrsctp ########
+
+usrsctp_check_headers = [
+    ['HAVE_USRSCTP_H', 'usrsctp.h'],
+    ]
+
+foreach h : check_headers
+  if cc.has_header(h.get(1))
+    cdata.set(h.get(0), 1)
+  endif
+endforeach
+
+#### checking struct members
+####--------------------------
+
+check_struct_members = [
+
+    ['HAVE_SA_LEN',    'struct sockaddr',      'sa_len',    '#include<sys/types.h>\n#include<sys/socket.h>'],
+    ['HAVE_SIN_LEN',   'struct sockaddr_in',   'sin_len',   '#include<sys/types.h>\n#include<netinet/in.h>'],
+    ['HAVE_SIN6_LEN',  'struct sockaddr_in6',  'sin6_len',  '#include<sys/types.h>\n#include<netinet/in.h>'],
+    ['HAVE_SCONN_LEN', 'struct sockaddr_conn', 'sconn_len', '#include<usrsctp.h'],
+
+    ['HAVE_SA_LEN',    'struct sockaddr',      'sa_len',    '#include <sys/types.h>'],
+    ['HAVE_SA_LEN',    'struct sockaddr',      'sa_len',    '#include <sys/socket.h>'],
+    ['HAVE_SIN_LEN',   'struct sockaddr_in',   'sin_len',   '#include <sys/types.h>'],
+    ['HAVE_SIN_LEN',   'struct sockaddr_in',   'sin_len',   '#include <netinet/in.h>'],
+    ['HAVE_SIN6_LEN',  'struct sockaddr_in6',  'sin6_len',  '#include <sys/types.h>'],
+    ['HAVE_SIN6_LEN',  'struct sockaddr_in6',  'sin6_len',  '#include <netinet/in.h>'],
+    ['HAVE_SCONN_LEN', 'struct sockaddr_conn', 'sconn_len', '#include <usrsctp.h'],
+    ]
+
+foreach m : check_struct_members
+  if cc.has_member(m.get(1), m.get(2), prefix : m.get(3))
+    cdata.set(m.get(0), 1)
+  endif
+endforeach
+
+#### checking options
+####------------------
+
+check_options = ['SCTP_DEBUG', 'INET', 'INET6']
+foreach o : check_options
+  if get_option(o)
+    cdata.set(o, 1)
+  endif
+endforeach
+
+
 configure_file(input : 'config.h.meson',
     output : 'config.h',
     configuration : cdata)
 
-##### include usrsctp ########
+th_dep = dependency('threads')
 
-# usrsctp_inc = include_directories('usrsctp/usrsctplib')
-# usrsctp_dep = declare_dependency(link_with : 'buildusrsctp', include_directories : usrsctp_inc)
-
-# TODO better would be to add it with subproject()
 usrsctp_build_path = join_paths(meson.source_root(), 'usrsctp/build')
 message('expecting libusrsctp at: ' + usrsctp_build_path)
 usrsctp_dep = cc.find_library('libusrsctp', dirs : usrsctp_build_path)
 
-Werror_args = [ '-Werror',
+Werror_args = [ # '-Werror', # can also be enabled with meson -werror
                 '-Wno-error=unused-variable',
                 '-Wno-error=unused-function',
                 '-Wno-error=unused-label',
                 '-Wno-error=unused-value' ]
-usrsctp_debug_args = ['-DSCTP_DEBUG']
 
 subdir('sctp')
 subdir('rtpudp')
 subdir('rtpsctp')
-subdir('sctpinittest/')
+subdir('sctpinittest')

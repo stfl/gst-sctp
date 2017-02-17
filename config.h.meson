@@ -425,3 +425,14 @@
 
 /* Define to 1 if the X Window System is missing or not being used. */
 #mesondefine X_DISPLAY_MISSING
+
+/***************** usrsctp related config **************/
+
+#mesondefine HAVE_SA_LEN
+#mesondefine HAVE_SIN_LEN
+#mesondefine HAVE_SIN6_LEN
+#mesondefine HAVE_SCONN_LEN
+
+#mesondefine SCTP_DEBUG
+#mesondefine INET
+#mesondefine INET6

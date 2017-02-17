@@ -1,0 +1,3 @@
+option('SCTP_DEBUG', type : 'boolean', description : 'Provide debug information for usrsctp', value : true)
+option('INET', type : 'boolean', description : 'usrsctp Support IPv4', value : true)
+option('INET6', type : 'boolean', description : 'usrsctp Support IPv6', value : true)

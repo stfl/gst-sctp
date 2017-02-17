@@ -4,7 +4,7 @@ let g:neomake_c_clangcheck_args = ['%:p',
          \ ]
          " 'extra-arg="-Werror -Wall"',
 
-let g:neomake_enabled_makers = ['ninja', 'clean', 'meson']
+let g:neomake_enabled_makers = ['ninja', 'clean', 'meson', 'rm']
 let g:neomake_ninja_maker = {
          \ 'exe' : 'ninja',
          \ 'cwd' : g:localvimrc_script_dir.'/build',
@@ -17,10 +17,15 @@ let g:neomake_clean_maker = {
          \ 'args' : 'clean',
          \ }
 
-let g:neomake_meson_maker = {
-         \ 'exe' : 'rm -rf build; meson',
+let g:neomake_rm_maker = {
+         \ 'exe' : 'rm',
          \ 'cwd' : g:localvimrc_script_dir,
-         \ 'args' : 'build',
+         \ 'args' : ['build', '-rf'],
+         \ }
+let g:neomake_meson_maker = {
+         \ 'exe' : 'meson',
+         \ 'cwd' : g:localvimrc_script_dir,
+         \ 'args' : ['build', '--werror'],
          \ }
 
 

@@ -6,8 +6,8 @@ sctp_sources = [
 
 gstsctp = library('gstsctp',
       sctp_sources,
-      dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep, usrsctp_dep],
-      c_args : [gst_args, Werror_args, usrsctp_debug_args],
+      dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep, usrsctp_dep, th_dep],
+      c_args : [gst_args, Werror_args],
       include_directories : configinc,
       install_dir : plugins_install_dir,
       install : true,
