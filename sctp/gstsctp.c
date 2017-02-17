@@ -36,14 +36,10 @@ plugin_init (GstPlugin * plugin)
    *       "be broken, see https://bugzilla.gnome.org/show_bug.cgi?id=688378");
    * } */
 
-  /* register info of the netaddress metadata so that we can use it from
-   * multiple threads right away. Note that the plugin loading is always
-   * serialized */
-  gst_net_address_meta_get_info ();
-
+  /* register info of the netaddress metadata so that we can use it from multiple threads right
+   * away. Note that the plugin loading is always serialized */ gst_net_address_meta_get_info ();
   if (!gst_element_register (plugin, "sctpsink", GST_RANK_NONE, GST_TYPE_SCTPSINK))
     return FALSE;
-
   if (!gst_element_register (plugin, "sctpsrc", GST_RANK_NONE, GST_TYPE_SCTPSRC))
     return FALSE;
 

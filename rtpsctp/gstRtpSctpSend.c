@@ -48,7 +48,6 @@ struct __GstRtpSctpSender
 _GstRtpSctpSender *gst_RtpSctpSender_new (void);
 void gst_RtpSctpSender_free (_GstRtpSctpSender *RtpSctpSender);
 void gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender *RtpSctpSender);
-void gst_RtpSctpSender_create_pipeline_playbin (_GstRtpSctpSender *RtpSctpSender, const char *uri);
 void gst_RtpSctpSender_start (_GstRtpSctpSender *RtpSctpSender);
 void gst_RtpSctpSender_stop (_GstRtpSctpSender *RtpSctpSender);
 
@@ -186,8 +185,9 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       /* return -1; */
    }
    g_object_set(sink,
-         "host",   "127.0.0.1",
-         "port",    9,
+         /* "host",   "127.0.0.1", */
+         "host",   "::1",
+         "port",    1117,
          NULL);
 
    /* add to pipeline */
