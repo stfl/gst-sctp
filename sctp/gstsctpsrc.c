@@ -34,387 +34,730 @@
 #include "config.h"
 #endif
 
-#include <gst/gst.h>
-#include <gst/base/gstbasesrc.h>
 #include "gstsctpsrc.h"
+#include "gstsctputils.h"
+#include <gst/base/gstpushsrc.h>
+#include <gst/gst.h>
 
-GST_DEBUG_CATEGORY_STATIC (gst_sctpsrc_debug_category);
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <usrsctp.h>
+
+#define BUFFER_SIZE 10240
+
+GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsrc_debug_category
+
+#define SCTP_DEFAULT_HOST                   "::"
+#define SCTP_DEFAULT_PORT                   1117
+#define SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE 9988
+#define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL  9989
+#define SCTP_DEFAULT_UDP_ENCAPS             FALSE
+
+#define SCTP_DEFAULT_ASSOC_VALUE            47
 
 /* prototypes */
 
+static void gst_sctpsrc_set_property(
+    GObject* object, guint property_id, const GValue* value, GParamSpec* pspec);
+static void gst_sctpsrc_get_property(
+    GObject* object, guint property_id, GValue* value, GParamSpec* pspec);
+static void gst_sctpsrc_dispose(GObject* object);
+static void gst_sctpsrc_finalize(GObject* object);
 
-static void gst_sctpsrc_set_property (GObject * object,
-    guint property_id, const GValue * value, GParamSpec * pspec);
-static void gst_sctpsrc_get_property (GObject * object,
-    guint property_id, GValue * value, GParamSpec * pspec);
-static void gst_sctpsrc_dispose (GObject * object);
-static void gst_sctpsrc_finalize (GObject * object);
+/* static GstCaps *gst_sctpsrc_get_caps (GstBaseSrc * src, GstCaps * filter); */
+/* static gboolean gst_sctpsrc_negotiate (GstBaseSrc * src); */
+/* static GstCaps *gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps); */
+/* static gboolean gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps); */
+/* static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query); */
+static gboolean gst_sctpsrc_start(GstBaseSrc* src);
+static gboolean gst_sctpsrc_stop(GstBaseSrc* src);
+/* static void gst_sctpsrc_get_times (GstBaseSrc * src, GstBuffer * buffer, GstClockTime * start,
+ * GstClockTime * end); */
+/* static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size); */
+/* static gboolean gst_sctpsrc_is_seekable (GstBaseSrc * src); */
+/* static gboolean gst_sctpsrc_prepare_seek_segment (GstBaseSrc * src, GstEvent * seek, GstSegment *
+ * segment); */
+/* static gboolean gst_sctpsrc_do_seek (GstBaseSrc * src, GstSegment * segment); */
+/* static gboolean gst_sctpsrc_unlock (GstBaseSrc * src); */
+/* static gboolean gst_sctpsrc_unlock_stop (GstBaseSrc * src); */
+/* static gboolean gst_sctpsrc_query (GstBaseSrc * src, GstQuery * query); */
+/* static gboolean gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event); */
 
-static GstCaps *gst_sctpsrc_get_caps (GstBaseSrc * src, GstCaps * filter);
-static gboolean gst_sctpsrc_negotiate (GstBaseSrc * src);
-static GstCaps *gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps);
-static gboolean gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps);
-static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src,
-    GstQuery * query);
-static gboolean gst_sctpsrc_start (GstBaseSrc * src);
-static gboolean gst_sctpsrc_stop (GstBaseSrc * src);
-static void gst_sctpsrc_get_times (GstBaseSrc * src, GstBuffer * buffer,
-    GstClockTime * start, GstClockTime * end);
-static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size);
-static gboolean gst_sctpsrc_is_seekable (GstBaseSrc * src);
-static gboolean gst_sctpsrc_prepare_seek_segment (GstBaseSrc * src,
-    GstEvent * seek, GstSegment * segment);
-static gboolean gst_sctpsrc_do_seek (GstBaseSrc * src, GstSegment * segment);
-static gboolean gst_sctpsrc_unlock (GstBaseSrc * src);
-static gboolean gst_sctpsrc_unlock_stop (GstBaseSrc * src);
-static gboolean gst_sctpsrc_query (GstBaseSrc * src, GstQuery * query);
-static gboolean gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event);
-static GstFlowReturn gst_sctpsrc_create (GstBaseSrc * src, guint64 offset,
-    guint size, GstBuffer ** buf);
-static GstFlowReturn gst_sctpsrc_alloc (GstBaseSrc * src, guint64 offset,
-    guint size, GstBuffer ** buf);
-static GstFlowReturn gst_sctpsrc_fill (GstBaseSrc * src, guint64 offset,
-    guint size, GstBuffer * buf);
+static GstFlowReturn gst_sctpsrc_create(GstPushSrc* src, GstBuffer** buf);
+/* static GstFlowReturn gst_sctpsrc_alloc (GstPushSrc * src, GstBuffer ** buf); */
+/* static GstFlowReturn gst_sctpsrc_fill (GstPushSrc * src, GstBuffer * buf); */
 
-enum
-{
-  PROP_0
+static int sctpsrc_receive_cb(struct socket* sock, union sctp_sockstore addr, void* data,
+    size_t datalen, struct sctp_rcvinfo rcv, int flags, void* ulp_info);
+
+enum {
+   PROP_0,
+   PROP_HOST,
+   PROP_PORT,
+   /* PROP_PORT_REMOTE, */
+   PROP_UDP_ENCAPS,
+   PROP_UDP_ENCAPS_PORT_LOCAL,
+   PROP_UDP_ENCAPS_PORT_REMOTE,
+   /* FILL ME */
 };
 
 /* pad templates */
-
-static GstStaticPadTemplate gst_sctpsrc_src_template =
-GST_STATIC_PAD_TEMPLATE ("src",
-    GST_PAD_SRC,
-    GST_PAD_ALWAYS,
-    GST_STATIC_CAPS ("application/unknown")
-    );
-
+static GstStaticPadTemplate gst_sctpsrc_src_template
+    = GST_STATIC_PAD_TEMPLATE("src", GST_PAD_SRC, GST_PAD_ALWAYS, GST_STATIC_CAPS_ANY);
 
 /* class initialization */
-
-G_DEFINE_TYPE_WITH_CODE (GstSctpSrc, gst_sctpsrc, GST_TYPE_BASE_SRC,
-    GST_DEBUG_CATEGORY_INIT (gst_sctpsrc_debug_category, "sctpsrc",
-       GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_BLUE | GST_DEBUG_BOLD,
+G_DEFINE_TYPE_WITH_CODE(GstSctpSrc, gst_sctpsrc, GST_TYPE_PUSH_SRC,
+    GST_DEBUG_CATEGORY_INIT(gst_sctpsrc_debug_category, "sctpsrc",
+        GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_WHITE | GST_DEBUG_BOLD,
         "debug category for sctpsrc element"));
 
-static void
-gst_sctpsrc_class_init (GstSctpSrcClass * klass)
+static void gst_sctpsrc_class_init(GstSctpSrcClass* klass)
 {
-  GObjectClass *gobject_class = G_OBJECT_CLASS (klass);
-  GstBaseSrcClass *base_src_class = GST_BASE_SRC_CLASS (klass);
+   GObjectClass* gobject_class = G_OBJECT_CLASS(klass);
+   GstBaseSrcClass* base_src_class = GST_BASE_SRC_CLASS(klass);
+   GstPushSrcClass* push_src_class = (GstPushSrcClass*)klass;
 
-  /* Setting up pads and setting metadata should be moved to
-     base_class_init if you intend to subclass this class. */
-  gst_element_class_add_pad_template (GST_ELEMENT_CLASS (klass),
-      gst_static_pad_template_get (&gst_sctpsrc_src_template));
+   /* Setting up pads and setting metadata should be moved to
+      base_class_init if you intend to subclass this class. */
+   gst_element_class_add_pad_template(
+       GST_ELEMENT_CLASS(klass), gst_static_pad_template_get(&gst_sctpsrc_src_template));
 
-  gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
-      "FIXME Long name", "Generic", "FIXME Description",
-      "FIXME <fixme@example.com>");
+   gst_element_class_set_static_metadata(GST_ELEMENT_CLASS(klass), "SCTP packet receiver",
+       "Source/Network", "Receive data over the network via SCTP",
+       "Stefan Lendl <ste.lendl@gmail.com>");
 
-  gobject_class->set_property = gst_sctpsrc_set_property;
-  gobject_class->get_property = gst_sctpsrc_get_property;
-  gobject_class->dispose = gst_sctpsrc_dispose;
-  gobject_class->finalize = gst_sctpsrc_finalize;
-  base_src_class->get_caps = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_caps);
-  base_src_class->negotiate = GST_DEBUG_FUNCPTR (gst_sctpsrc_negotiate);
-  base_src_class->fixate = GST_DEBUG_FUNCPTR (gst_sctpsrc_fixate);
-  base_src_class->set_caps = GST_DEBUG_FUNCPTR (gst_sctpsrc_set_caps);
-  base_src_class->decide_allocation =
-      GST_DEBUG_FUNCPTR (gst_sctpsrc_decide_allocation);
-  base_src_class->start = GST_DEBUG_FUNCPTR (gst_sctpsrc_start);
-  base_src_class->stop = GST_DEBUG_FUNCPTR (gst_sctpsrc_stop);
-  base_src_class->get_times = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_times);
-  base_src_class->get_size = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_size);
-  base_src_class->is_seekable = GST_DEBUG_FUNCPTR (gst_sctpsrc_is_seekable);
-  base_src_class->prepare_seek_segment =
-      GST_DEBUG_FUNCPTR (gst_sctpsrc_prepare_seek_segment);
-  base_src_class->do_seek = GST_DEBUG_FUNCPTR (gst_sctpsrc_do_seek);
-  base_src_class->unlock = GST_DEBUG_FUNCPTR (gst_sctpsrc_unlock);
-  base_src_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_sctpsrc_unlock_stop);
-  base_src_class->query = GST_DEBUG_FUNCPTR (gst_sctpsrc_query);
-  base_src_class->event = GST_DEBUG_FUNCPTR (gst_sctpsrc_event);
-  base_src_class->create = GST_DEBUG_FUNCPTR (gst_sctpsrc_create);
-  base_src_class->alloc = GST_DEBUG_FUNCPTR (gst_sctpsrc_alloc);
-  base_src_class->fill = GST_DEBUG_FUNCPTR (gst_sctpsrc_fill);
+   gobject_class->set_property = gst_sctpsrc_set_property;
+   gobject_class->get_property = gst_sctpsrc_get_property;
+   gobject_class->dispose = gst_sctpsrc_dispose;
+   gobject_class->finalize = gst_sctpsrc_finalize;
+   /* base_src_class->get_caps = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_caps); */
+   /* base_src_class->negotiate = GST_DEBUG_FUNCPTR (gst_sctpsrc_negotiate); */
+   /* base_src_class->fixate = GST_DEBUG_FUNCPTR (gst_sctpsrc_fixate); */
+   /* base_src_class->set_caps = GST_DEBUG_FUNCPTR (gst_sctpsrc_set_caps); */
+   /* base_src_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_sctpsrc_decide_allocation); */
+   base_src_class->start = GST_DEBUG_FUNCPTR(gst_sctpsrc_start);
+   base_src_class->stop = GST_DEBUG_FUNCPTR(gst_sctpsrc_stop);
+   /* base_src_class->get_times = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_times); */
+   /* base_src_class->get_size = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_size); */
+   /* base_src_class->is_seekable = GST_DEBUG_FUNCPTR (gst_sctpsrc_is_seekable); */
+   /* base_src_class->prepare_seek_segment = GST_DEBUG_FUNCPTR (gst_sctpsrc_prepare_seek_segment);
+    */
+   /* base_src_class->do_seek = GST_DEBUG_FUNCPTR (gst_sctpsrc_do_seek); */
+   /* base_src_class->unlock = GST_DEBUG_FUNCPTR (gst_sctpsrc_unlock); */
+   /* base_src_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_sctpsrc_unlock_stop); */
+   /* base_src_class->query = GST_DEBUG_FUNCPTR (gst_sctpsrc_query); */
+   /* base_src_class->event = GST_DEBUG_FUNCPTR (gst_sctpsrc_event); */
 
+   push_src_class->create = gst_sctpsrc_create;
+   /* push_src_class->alloc = GST_DEBUG_FUNCPTR (gst_sctpsrc_alloc); */
+   /* push_src_class->fill = GST_DEBUG_FUNCPTR (gst_sctpsrc_fill); */
+
+   g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_HOST,
+       g_param_spec_string("host", "Host", "The host IP address to receive packets from",
+           SCTP_DEFAULT_HOST, G_PARAM_READWRITE));
+   g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_PORT,
+       g_param_spec_int("port", "Port", "The port packets are received", 0, 65535,
+           SCTP_DEFAULT_PORT, G_PARAM_READWRITE));
+
+   g_object_class_install_property(gobject_class, PROP_UDP_ENCAPS,
+       g_param_spec_boolean("udp-encaps", "UDP encapsulation", "Enable UDP encapsulation",
+           SCTP_DEFAULT_UDP_ENCAPS, G_PARAM_READWRITE));
+   g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_UDP_ENCAPS_PORT_LOCAL,
+       g_param_spec_int("udp-encaps-port-local", "local UDP encapuslation port",
+           "The local port used with UDP encapsulate", 0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL,
+           G_PARAM_READWRITE));
+   g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_UDP_ENCAPS_PORT_REMOTE,
+       g_param_spec_int("udp-encaps-port-remote", "remote UDP encapuslation port",
+           "The remote port used with UDP encapsulate", 0, 65535,
+           SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE, G_PARAM_READWRITE));
 }
 
-static void
-gst_sctpsrc_init (GstSctpSrc * sctpsrc)
+static void gst_sctpsrc_init(GstSctpSrc* sctpsrc)
 {
+   sctpsrc->host = g_strdup(SCTP_DEFAULT_HOST);
+   sctpsrc->port = SCTP_DEFAULT_PORT;
+
+   sctpsrc->udp_encaps = SCTP_DEFAULT_UDP_ENCAPS;
+   sctpsrc->udp_encaps_port_local = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
+   sctpsrc->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
 }
 
-void
-gst_sctpsrc_set_property (GObject * object, guint property_id,
-    const GValue * value, GParamSpec * pspec)
+void gst_sctpsrc_set_property(
+    GObject* object, guint property_id, const GValue* value, GParamSpec* pspec)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (object);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(object);
+   /* GST_DEBUG_OBJECT (sctpsrc, "set_property"); */
 
-  GST_DEBUG_OBJECT (sctpsrc, "set_property");
-
-  switch (property_id) {
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+   switch (property_id) {
+   case PROP_HOST: {
+      const gchar* addr;
+      addr = g_value_get_string(value);
+      g_free(sctpsrc->host);
+      sctpsrc->host = g_strdup(addr);
+      GST_DEBUG_OBJECT(sctpsrc, "set addr:%s", sctpsrc->host);
       break;
-  }
-}
-
-void
-gst_sctpsrc_get_property (GObject * object, guint property_id,
-    GValue * value, GParamSpec * pspec)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (object);
-
-  GST_DEBUG_OBJECT (sctpsrc, "get_property");
-
-  switch (property_id) {
-    default:
-      G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+   }
+   case PROP_PORT:
+      sctpsrc->port = g_value_get_int(value);
+      GST_DEBUG_OBJECT(sctpsrc, "set port:%d", sctpsrc->port);
       break;
-  }
+   case PROP_UDP_ENCAPS:
+      sctpsrc->udp_encaps = g_value_get_boolean(value);
+      GST_DEBUG_OBJECT(sctpsrc, "set UDP encapsulation:%s", sctpsrc->udp_encaps ? "TRUE" : "FALSE");
+      break;
+   case PROP_UDP_ENCAPS_PORT_REMOTE:
+      sctpsrc->udp_encaps_port_remote = g_value_get_int(value);
+      GST_DEBUG_OBJECT(sctpsrc, "set UDP encapsulation port:%d", sctpsrc->udp_encaps_port_remote);
+      break;
+   case PROP_UDP_ENCAPS_PORT_LOCAL:
+      sctpsrc->udp_encaps_port_local = g_value_get_int(value);
+      GST_DEBUG_OBJECT(
+          sctpsrc, "set UDP encapsulation src port:%d", sctpsrc->udp_encaps_port_local);
+      break;
+   default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+      break;
+   }
 }
 
-void
-gst_sctpsrc_dispose (GObject * object)
+void gst_sctpsrc_get_property(GObject* object, guint property_id, GValue* value, GParamSpec* pspec)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (object);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(object);
+   /* GST_DEBUG_OBJECT (sctpsrc, "get_property"); */
 
-  GST_DEBUG_OBJECT (sctpsrc, "dispose");
+   switch (property_id) {
+   case PROP_HOST:
+      g_value_set_string(value, sctpsrc->host);
+      break;
+   case PROP_PORT:
+      g_value_set_int(value, sctpsrc->port);
+      break;
 
-  /* clean up as possible.  may be called multiple times */
+   case PROP_UDP_ENCAPS:
+      g_value_set_boolean(value, sctpsrc->udp_encaps);
+      break;
+   case PROP_UDP_ENCAPS_PORT_REMOTE:
+      g_value_set_int(value, sctpsrc->udp_encaps_port_remote);
+      break;
+   case PROP_UDP_ENCAPS_PORT_LOCAL:
+      g_value_set_int(value, sctpsrc->udp_encaps_port_local);
+      break;
 
-  G_OBJECT_CLASS (gst_sctpsrc_parent_class)->dispose (object);
+   default:
+      G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
+      break;
+   }
 }
 
-void
-gst_sctpsrc_finalize (GObject * object)
+void gst_sctpsrc_dispose(GObject* object)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (object);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(object);
 
-  GST_DEBUG_OBJECT (sctpsrc, "finalize");
+   GST_DEBUG_OBJECT(sctpsrc, "dispose");
 
-  /* clean up object here */
+   /* clean up as possible.  may be called multiple times */
 
-  G_OBJECT_CLASS (gst_sctpsrc_parent_class)->finalize (object);
+   G_OBJECT_CLASS(gst_sctpsrc_parent_class)->dispose(object);
+}
+
+void gst_sctpsrc_finalize(GObject* object)
+{
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(object);
+
+   GST_DEBUG_OBJECT(sctpsrc, "finalize");
+
+   usrsctp_close(sctpsrc->sock);
+   while (usrsctp_finish() != 0) {
+      sleep(1);
+   }
+   /* clean up object here */
+
+   G_OBJECT_CLASS(gst_sctpsrc_parent_class)->finalize(object);
 }
 
 /* get caps from subclass */
-static GstCaps *
-gst_sctpsrc_get_caps (GstBaseSrc * src, GstCaps * filter)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "get_caps");
-
-  return NULL;
-}
+/* static GstCaps *
+ * gst_sctpsrc_get_caps (GstBaseSrc * src, GstCaps * filter)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *   GST_DEBUG_OBJECT (sctpsrc, "get_caps: %s", gst_caps_to_string(filter));
+ *
+ *   return NULL;
+ * } */
 
 /* decide on caps */
-static gboolean
-gst_sctpsrc_negotiate (GstBaseSrc * src)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "negotiate");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_negotiate (GstBaseSrc * src)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "negotiate");
+ *
+ *   return TRUE;
+ * } */
 
 /* called if, in negotiation, caps need fixating */
-static GstCaps *
-gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "fixate");
-
-  return NULL;
-}
+/* static GstCaps *
+ * gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "fixate");
+ *
+ *   return NULL;
+ * } */
 
 /* notify the subclass of new caps */
-static gboolean
-gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "set_caps");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "set_caps");
+ *
+ *   return TRUE;
+ * } */
 
 /* setup allocation query */
-static gboolean
-gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "decide_allocation");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "decide_allocation");
+ *
+ *   return TRUE;
+ * } */
 
 /* start and stop processing, ideal for opening/closing the resource */
-static gboolean
-gst_sctpsrc_start (GstBaseSrc * src)
+static gboolean gst_sctpsrc_start(GstBaseSrc* src)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(src);
+   GST_DEBUG_OBJECT(sctpsrc, "start");
 
-  GST_DEBUG_OBJECT (sctpsrc, "start");
+   struct sockaddr_in6 addr;
+   struct sctp_udpencaps encaps;
+   struct sctp_event event;
+   uint16_t event_types[] = { SCTP_ASSOC_CHANGE,
+                              SCTP_PEER_ADDR_CHANGE,
+                              SCTP_REMOTE_ERROR,
+                              SCTP_SHUTDOWN_EVENT,
+                              SCTP_ADAPTATION_INDICATION,
+                              SCTP_PARTIAL_DELIVERY_EVENT
+   };
+   unsigned int i;
+   struct sctp_assoc_value av;
+   const int on = 1;
+   /* ssize_t n; */
+   /* int flags; */
+   /* socklen_t from_len; */
+   /* char buffer[BUFFER_SIZE]; */
+   char name[INET6_ADDRSTRLEN];
+   /* socklen_t infolen; */
+   /* struct sctp_rcvinfo rcv_info; */
+   /* unsigned int infotype; */
 
-  return TRUE;
+   usrsctp_init(sctpsrc->udp_encaps ? sctpsrc->udp_encaps_port_local : 0,
+         NULL, usrsctp_debug_printf);
+#ifdef SCTP_DEBUG
+   usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);
+#endif
+   usrsctp_sysctl_set_sctp_blackhole(2);
+
+   if ((sctpsrc->sock = usrsctp_socket(
+            AF_INET6, SOCK_SEQPACKET, IPPROTO_SCTP, sctpsrc_receive_cb, NULL, 0, NULL))
+       == NULL) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_socket");
+   }
+
+   /* https://github.com/sctplab/usrsctp/blob/0.9.3.0/Manual.md#socket-options */
+   /* https://tools.ietf.org/html/rfc6458#section-8 */
+   if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_I_WANT_MAPPED_V4_ADDR, (const void*)&on,
+           (socklen_t)sizeof(int))
+       < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_I_WANT_MAPPED_V4_ADDR");
+   }
+
+   /* something about referencing with input data when using one-to-many sockets */
+   memset(&av, 0, sizeof(struct sctp_assoc_value));
+   av.assoc_id = SCTP_ALL_ASSOC;
+   av.assoc_value = SCTP_DEFAULT_ASSOC_VALUE;
+
+   if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_CONTEXT, (const void*)&av,
+           (socklen_t)sizeof(struct sctp_assoc_value))
+       < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_CONTEXT");
+   }
+
+   /* describes SCTP receive information about a received message through recvmsg() */
+   if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_RECVRCVINFO, &on, sizeof(int)) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_RECVRCVINFO");
+   }
+
+   if (sctpsrc->udp_encaps) {
+      memset(&encaps, 0, sizeof(struct sctp_udpencaps));
+      encaps.sue_address.ss_family = AF_INET6;
+      encaps.sue_port = htons(sctpsrc->udp_encaps_port_remote);
+      if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_REMOTE_UDP_ENCAPS_PORT,
+              (const void*)&encaps, (socklen_t)sizeof(struct sctp_udpencaps))
+          < 0) {
+         GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_REMOTE_UDP_ENCAPS_PORT");
+      }
+   }
+
+   /* set the enabled events as specified in event_types[] */
+   memset(&event, 0, sizeof(event));
+   event.se_assoc_id = SCTP_FUTURE_ASSOC;
+   event.se_on = 1;
+   for (i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
+      event.se_type = event_types[i];
+      if (usrsctp_setsockopt(
+              sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event, sizeof(struct sctp_event))
+          < 0) {
+         GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_EVENT");
+      }
+   }
+
+   /* define address for bind */
+   memset((void*)&addr, 0, sizeof(struct sockaddr_in6));
+#ifdef HAVE_SIN6_LEN
+   addr.sin6_len = sizeof(struct sockaddr_in6);
+#endif
+   addr.sin6_family = AF_INET6;
+   addr.sin6_port = htons(sctpsrc->port);
+   GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
+       inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN), ntohs(addr.sin6_port));
+   addr.sin6_addr = in6addr_any;
+   if (usrsctp_bind(sctpsrc->sock, (struct sockaddr*)&addr, sizeof(struct sockaddr_in6)) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind");
+   }
+   if (usrsctp_listen(sctpsrc->sock, 1) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen");
+   }
+
+   // the loop...
+   /*    while (1) {
+    *       from_len = (socklen_t)sizeof(struct sockaddr_in6);
+    *       flags = 0;
+    *       infolen = (socklen_t)sizeof(struct sctp_rcvinfo);
+    *       // blocking > returns a lot of flags
+    *       n = usrsctp_recvv(sctpsrc->sock, (void*)buffer, BUFFER_SIZE, (struct sockaddr*)&addr,
+    *           &from_len, (void*)&rcv_info, &infolen, &infotype, &flags);
+    *       if (n > 0) {
+    *          if (flags & MSG_NOTIFICATION) {
+    *             GST_DEBUG_OBJECT(
+    *                 sctpsrc, "Notification of length %llu received.", (unsigned long long)n);
+    *          } else {
+    *             if (infotype == SCTP_RECVV_RCVINFO) {
+    *                GST_DEBUG_OBJECT(sctpsrc,
+    *                    "Msg of length %llu received from %s:%u on stream %d with SSN %u and TSN "
+    *                    "%u, PPID %u, context %u, complete %d.",
+    *                    (unsigned long long)n,
+    *                    inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN),
+    *                    ntohs(addr.sin6_port), rcv_info.rcv_sid, rcv_info.rcv_ssn,
+    * rcv_info.rcv_tsn,
+    *                    ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0);
+    *
+    *                // the echo
+    *             [>                      if (flags & MSG_EOR) { // End of Record <]
+    *             [>                         struct sctp_sndinfo snd_info; <]
+    *             [>  <]
+    *             [>                         snd_info.snd_sid = rcv_info.rcv_sid; <]
+    *             [>                         snd_info.snd_flags = 0; <]
+    *             [>                         if (rcv_info.rcv_flags & SCTP_UNORDERED) { <]
+    *             [>                            snd_info.snd_flags |= SCTP_UNORDERED; <]
+    *             [>                         } <]
+    *             [>                         snd_info.snd_ppid = rcv_info.rcv_ppid; <]
+    *             [>                         snd_info.snd_context = 0; <]
+    *             [>                         snd_info.snd_assoc_id = rcv_info.rcv_assoc_id; <]
+    *             [>                         if (usrsctp_sendv(sctpsrc->sock, buffer, (size_t)n,
+    * NULL, <]
+    *             [>    0, <]
+    *             [>    &snd_info, <]
+    *             [>                                  (socklen_t)sizeof(struct sctp_sndinfo), <]
+    *             [>    SCTP_SENDV_SNDINFO, 0) < 0) { <]
+    *             [>                            GST_ERROR_OBJECT(sctpsrc, "sctp_sendv"); <]
+    *             [>                         } <]
+    *             [>                      } <]
+    *             [> } else { <]
+    *                GST_DEBUG_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, complete
+    * %d.",
+    *                    (unsigned long long)n,
+    *                    inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN),
+    *                    ntohs(addr.sin6_port), (flags & MSG_EOR) ? 1 : 0);
+    *             }
+    *             [> GST_DEBUG_OBJECT(sctpsrc, "%.*s", (int)n, buffer); <]
+    *          }
+    *       } else {
+    *          break;
+    *       }
+    * } */
+   return TRUE;
 }
 
-static gboolean
-gst_sctpsrc_stop (GstBaseSrc * src)
+static gboolean gst_sctpsrc_stop(GstBaseSrc* src)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(src);
+   GST_DEBUG_OBJECT(sctpsrc, "stop");
 
-  GST_DEBUG_OBJECT (sctpsrc, "stop");
+   usrsctp_close(sctpsrc->sock);
+   while (usrsctp_finish() != 0) {
+      sleep(1);
+   }
 
-  return TRUE;
+   return TRUE;
 }
 
 /* given a buffer, return start and stop time when it should be pushed
  * out. The base class will sync on the clock using these times. */
-static void
-gst_sctpsrc_get_times (GstBaseSrc * src, GstBuffer * buffer,
-    GstClockTime * start, GstClockTime * end)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "get_times");
-
-}
+/* static void
+ * gst_sctpsrc_get_times (GstBaseSrc * src, GstBuffer * buffer,
+ *     GstClockTime * start, GstClockTime * end)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "get_times");
+ *
+ * } */
 
 /* get the total size of the resource in bytes */
-static gboolean
-gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "get_size");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "get_size");
+ *
+ *   return TRUE;
+ * } */
 
 /* check if the resource is seekable */
-static gboolean
-gst_sctpsrc_is_seekable (GstBaseSrc * src)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "is_seekable");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_is_seekable (GstBaseSrc * src)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "is_seekable");
+ *
+ *   return TRUE;
+ * } */
 
 /* Prepare the segment on which to perform do_seek(), converting to the
  * current basesrc format. */
-static gboolean
-gst_sctpsrc_prepare_seek_segment (GstBaseSrc * src, GstEvent * seek,
-    GstSegment * segment)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "prepare_seek_segment");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_prepare_seek_segment (GstBaseSrc * src, GstEvent * seek,
+ *     GstSegment * segment)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "prepare_seek_segment");
+ *
+ *   return TRUE;
+ * } */
 
 /* notify subclasses of a seek */
-static gboolean
-gst_sctpsrc_do_seek (GstBaseSrc * src, GstSegment * segment)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "do_seek");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_do_seek (GstBaseSrc * src, GstSegment * segment)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "do_seek");
+ *
+ *   return TRUE;
+ * } */
 
 /* unlock any pending access to the resource. subclasses should unlock
  * any function ASAP. */
-static gboolean
-gst_sctpsrc_unlock (GstBaseSrc * src)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "unlock");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_unlock (GstBaseSrc * src)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "unlock");
+ *
+ *   return TRUE;
+ * } */
 
 /* Clear any pending unlock request, as we succeeded in unlocking */
-static gboolean
-gst_sctpsrc_unlock_stop (GstBaseSrc * src)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "unlock_stop");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_unlock_stop (GstBaseSrc * src)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "unlock_stop");
+ *
+ *   return TRUE;
+ * } */
 
 /* notify subclasses of a query */
-static gboolean
-gst_sctpsrc_query (GstBaseSrc * src, GstQuery * query)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "query");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_query (GstBaseSrc * src, GstQuery * query)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *   GST_DEBUG_OBJECT (sctpsrc, "query: %s", GST_QUERY_TYPE_NAME(query));
+ *
+ *   return gst_pad_query_default (src->srcpad, GST_OBJECT(src), query);
+ *
+ *   [> return TRUE; <]
+ * } */
 
 /* notify subclasses of an event */
-static gboolean
-gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "event");
-
-  return TRUE;
-}
+/* static gboolean
+ * gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "event");
+ *
+ *   return TRUE;
+ * } */
 
 /* ask the subclass to create a buffer with offset and size, the default
  * implementation will call alloc and fill. */
-static GstFlowReturn
-gst_sctpsrc_create (GstBaseSrc * src, guint64 offset, guint size,
-    GstBuffer ** buf)
+static GstFlowReturn gst_sctpsrc_create(GstPushSrc* src, GstBuffer** buf)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+   GstSctpSrc* sctpsrc = GST_SCTPSRC(src);
+   GST_DEBUG_OBJECT(sctpsrc, "create");
 
-  GST_DEBUG_OBJECT (sctpsrc, "create");
+   ssize_t n;
+   int flags;
 
-  return GST_FLOW_OK;
+   char name[INET6_ADDRSTRLEN];
+   char* buffer = g_malloc(BUFFER_SIZE);
+   /* [BUFFER_SIZE]; // FIXME: change to a malloc! */
+   socklen_t infolen;
+   struct sctp_rcvinfo rcv_info;
+   unsigned int infotype;
+   struct sockaddr_in6 from;
+   socklen_t from_len;
+
+   from_len = (socklen_t)sizeof(struct sockaddr_in6);
+   flags = 0;
+   infolen = (socklen_t)sizeof(struct sctp_rcvinfo);
+   // blocking > returns a lot of flags
+   n = usrsctp_recvv(sctpsrc->sock, (void*)buffer, BUFFER_SIZE, (struct sockaddr*)&from, &from_len,
+       (void*)&rcv_info, &infolen, &infotype, &flags);
+   if (n > 0) {
+      if (flags & MSG_NOTIFICATION) {
+         GST_DEBUG_OBJECT(sctpsrc, "Notification of length %llu received.", (unsigned long long)n);
+      } else {
+         if (infotype == SCTP_RECVV_RCVINFO) {
+            GST_DEBUG_OBJECT(sctpsrc,
+                "Msg of length %llu received from %s:%u on stream %d with SSN %u and TSN "
+                "%u, PPID %u, context %u, complete %d.",
+                (unsigned long long)n, inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
+                ntohs(from.sin6_port), rcv_info.rcv_sid, rcv_info.rcv_ssn, rcv_info.rcv_tsn,
+                ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0);
+
+            GST_DEBUG_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, complete% d.",
+                (unsigned long long)n, inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
+                ntohs(from.sin6_port), (flags & MSG_EOR) ? 1 : 0);
+
+            /* GST_DEBUG_OBJECT(sctpsrc, "%.*s", (int)n, buffer); */
+         }
+      }
+   } else {
+      return GST_FLOW_ERROR;
+   }
+
+   // FIXME: accept on client socket..
+   // close server socket (at least in TCP)
+   /* *buf = (GstBuffer *) g_malloc_n(10,1500); */
+
+   *buf = (GstBuffer*)buffer;
+   return GST_FLOW_OK;
 }
 
 /* ask the subclass to allocate an output buffer. The default implementation
  * will use the negotiated allocator. */
-static GstFlowReturn
-gst_sctpsrc_alloc (GstBaseSrc * src, guint64 offset, guint size,
-    GstBuffer ** buf)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-
-  GST_DEBUG_OBJECT (sctpsrc, "alloc");
-
-  return GST_FLOW_OK;
-}
+/* static GstFlowReturn
+ * gst_sctpsrc_alloc (GstPushSrc * src, GstBuffer ** buf)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "alloc");
+ *
+ *   return GST_FLOW_OK;
+ * } */
 
 /* ask the subclass to fill the buffer with data from offset and size */
-static GstFlowReturn
-gst_sctpsrc_fill (GstBaseSrc * src, guint64 offset, guint size, GstBuffer * buf)
+/* static GstFlowReturn
+ * gst_sctpsrc_fill (GstPushSrc * src, GstBuffer * buf)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *
+ *   GST_DEBUG_OBJECT (sctpsrc, "fill");
+ *
+ *   return GST_FLOW_OK;
+ * } */
+
+static int sctpsrc_receive_cb(struct socket* sock, union sctp_sockstore addr, void* data,
+    size_t datalen, struct sctp_rcvinfo rcv, int flags, void* ulp_info)
 {
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+   char namebuf[INET6_ADDRSTRLEN];
+   const char* name;
+   uint16_t port;
 
-  GST_DEBUG_OBJECT (sctpsrc, "fill");
+   if (data) {
+      if (flags & MSG_NOTIFICATION) {
+         GST_INFO("Notification of length %d received.", (int)datalen);
+      } else {
+         switch (addr.sa.sa_family) {
+#ifdef INET
+         case AF_INET:
+            name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
+            port = ntohs(addr.sin.sin_port);
+            break;
+#endif
+#ifdef INET6
+         case AF_INET6:
+            name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
+            port = ntohs(addr.sin6.sin6_port);
+            break;
+#endif
+         case AF_CONN:
+            snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
+            name = namebuf;
+            port = ntohs(addr.sconn.sconn_port);
+            break;
+         default:
+            name = NULL;
+            port = 0;
+            break;
+         }
+         GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u and TSN %u, PPID "
+                  "%u, context %u.",
+             (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn, ntohl(rcv.rcv_ppid),
+             rcv.rcv_context);
+         if (flags & MSG_EOR) {
+            struct sctp_sndinfo snd_info;
 
-  return GST_FLOW_OK;
+            snd_info.snd_sid = rcv.rcv_sid;
+            snd_info.snd_flags = 0;
+            if (rcv.rcv_flags & SCTP_UNORDERED) {
+               snd_info.snd_flags |= SCTP_UNORDERED;
+            }
+            snd_info.snd_ppid = rcv.rcv_ppid;
+            snd_info.snd_context = 0;
+            snd_info.snd_assoc_id = rcv.rcv_assoc_id;
+            if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
+                    SCTP_SENDV_SNDINFO, 0)
+                < 0) {
+               GST_ERROR("sctp_sendv");
+            }
+         }
+      }
+      free(data);
+   }
+   return (1);
 }
 
 // vim: ft=c

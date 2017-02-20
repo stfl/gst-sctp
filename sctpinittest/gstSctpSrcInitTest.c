@@ -136,14 +136,15 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    GstElement *pipeline = gst_pipeline_new ("pipeline");
 
    /* create element */
-   GstElement *source = gst_element_factory_make("udpsrc", "source");
+   GstElement *source = gst_element_factory_make("sctpsrc", "source");
    if (!source) {
-      g_critical ("Failed to create element of type 'udpsrc'\n");
+      g_critical ("Failed to create element of type 'sctpsrc'\n");
       /* return -1; */
    }
    g_object_set(G_OBJECT(source),
-         "port",   5000,
+         "port",   1117,
          NULL);
+
    GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
          "media", G_TYPE_STRING, "video",
          "clock-rate", G_TYPE_INT, 90000,
@@ -153,61 +154,25 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          "payload", G_TYPE_INT, 96,
          NULL);
 
-   GstElement *rtpdepay = gst_element_factory_make("rtph264depay", "rtpdepay");
-   if (!rtpdepay) {
-      g_critical ("failed to create element of type 'rtph264depay'\n");
-      /* return -1; */
-   }
-
-   GstElement *decoder = gst_element_factory_make("avdec_h264", "decoder");
-   if (!decoder) {
-      g_critical ("failed to create element of type 'avdec_h264'\n");
-      /* return -1; */
-   }
-
-   GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
-   if (!videoconvert) {
-      g_critical ("failed to create element of type 'avdec_h264'\n");
-      /* return -1; */
-   }
-
-   GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
-   if (!videosink) {
-      g_critical ("Failed to create element of type 'ximagesink'\n");
+   GstElement *fakesink = gst_element_factory_make("fakesink", "fakesink");
+   if (!fakesink) {
+      g_critical ("Failed to create element of type 'fakesink'\n");
       /* return -1; */
    }
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, decoder, videoconvert, videosink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, fakesink, NULL);
 
-   /* link */
- /* rtpdepay, decoder, */
-
-   if (!gst_element_link_filtered(source, rtpdepay, src_caps)) {
-      g_warning ("Failed to link filterd source and rtpdepay!\n");
+   /* if (!gst_element_link_filtered(source, fakesink, src_caps)) { */
+   if (!gst_element_link(source, fakesink)) {
+      g_warning ("Failed to link source and fakesink!\n");
    }
    gst_caps_unref(src_caps);
 
-   if (!gst_element_link(rtpdepay, decoder)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
-   }
-
-   if (!gst_element_link(decoder, videoconvert)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
-   }
-
-   if (!gst_element_link(videoconvert, videosink)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
-   }
 
    /* if (!gst_element_link_many (source, rtpdepay, decoder, videosink, NULL)) { */
    /*    g_warning ("Failed to link elements!"); */
    /* } */
-
-   /* GstCaps *c_tmp;
-    * g_object_get (G_OBJECT(source), "caps", &c_tmp, NULL);
-    * g_print("%s\n", gst_caps_to_string(c_tmp));
-    * g_object_unref(c_tmp); */
 
    RtpSctpReceiver->pipeline = pipeline;
 
@@ -219,7 +184,7 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    RtpSctpReceiver->source_element =
       gst_bin_get_by_name (GST_BIN (pipeline), "source");
    RtpSctpReceiver->sink_element =
-      gst_bin_get_by_name (GST_BIN (pipeline), "videosink");
+      gst_bin_get_by_name (GST_BIN (pipeline), "fakesink");
 }
 
 void

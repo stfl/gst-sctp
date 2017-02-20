@@ -48,8 +48,8 @@ struct _GstSctpSink
   /* gint       skip_first_bytes; */
 
   gboolean  udp_encaps;
-  gint      udp_encaps_src_port;
-  gint      udp_encaps_port;
+  gint      udp_encaps_port_local;
+  gint      udp_encaps_port_remote;
 
   struct socket *sock;
   /* our sockets */

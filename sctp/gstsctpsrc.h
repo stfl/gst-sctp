@@ -20,7 +20,8 @@
 #ifndef _GST_SCTPSRC_H_
 #define _GST_SCTPSRC_H_
 
-#include <gst/base/gstbasesrc.h>
+/* #include <gst/base/gstbasesrc.h> */
+#include <gst/base/gstpushsrc.h>
 
 G_BEGIN_DECLS
 
@@ -37,11 +38,33 @@ struct _GstSctpSrc
 {
   GstBaseSrc base_sctpsrc;
 
+  /* properties */
+  gchar     *host;
+  gint       port;
+
+  /* gchar     *peer; */
+  /* gint       peer_port; */
+
+  gboolean  udp_encaps;
+  gint      udp_encaps_port_local;
+  gint      udp_encaps_port_remote;
+
+  struct socket *sock;
+
+  gint       ttl;
+  GstCaps   *caps;
+  gint       buffer_size;
+  guint64    timeout;
+
+  gint       skip_first_bytes;
+  gboolean   close_socket;
+  /* gboolean   retrieve_sender_address; */
 };
 
 struct _GstSctpSrcClass
 {
-  GstBaseSrcClass base_sctpsrc_class;
+  /* GstBaseSrcClass base_sctpsrc_class; */
+  GstPushSrcClass parent_class;
 };
 
 GType gst_sctpsrc_get_type (void);

@@ -1,7 +1,8 @@
 sctp_sources = [
       'gstsctp.c',
       'gstsctpsrc.c',
-      'gstsctpsink.c'
+      'gstsctpsink.c',
+      'gstsctputils.c'
       ]
 
 gstsctp = library('gstsctp',

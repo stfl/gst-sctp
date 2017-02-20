@@ -32,8 +32,12 @@ let g:neomake_meson_maker = {
 " add compile_commands.json to deoplete-clang completion
 let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
 
-" make vim not confuse cpp/c
+" nnoremap <c-p> :FZF expand('g:localvimrc_script_dir')<CR>
 
+set foldminlines=4
+set foldnestmax=3
+
+" make vim not confuse cpp/c
 augroup MyProject
    autocmd!
    autocmd BufNewFile,BufRead *.[ch] set filetype=c
