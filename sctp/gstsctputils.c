@@ -14,6 +14,15 @@
 #include <arpa/inet.h>
 #include <usrsctp.h>
 
+/* GST_DEBUG_CATEGORY_STATIC(gst_sctputils_debug_category);
+ *
+ * #define GST_CAT_DEFAULT gst_sctputils_debug_category
+ *
+ * G_DEFINE_TYPE_WITH_CODE (GstSctpUtils, gst_sctputils, GST_TYPE_BASE_SRC,
+ *       GST_DEBUG_CATEGORY_INIT (gst_sctputils_debug_category, "sctputils",
+ *          GST_DEBUG_BG_GREEN | GST_DEBUG_FG_RED | GST_DEBUG_BOLD,
+ *          "debug category for sctpsink element")); */
+
 void
 usrsctp_debug_printf(const char *format, ...)
 {

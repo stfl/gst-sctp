@@ -289,7 +289,7 @@ gst_sctpsink_finalize (GstSctpSink * sctpsink)
 {
    GST_DEBUG_OBJECT (sctpsink, "finalize");
 
-   /* clean up object here */
+   // FIXME: null-out all attributes 
 
    g_free (sctpsink->host);
    sctpsink->host = NULL;
