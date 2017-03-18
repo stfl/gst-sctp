@@ -102,6 +102,8 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf);
 static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
                               size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info);
 
+static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer);
+
 enum {
    PROP_0,
    PROP_HOST,
@@ -160,7 +162,7 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
    /* base_src_class->unlock_stop = GST_DEBUG_FUNCPTR (gst_sctpsrc_unlock_stop);
    */
    /* base_src_class->query = GST_DEBUG_FUNCPTR (gst_sctpsrc_query); */
-   base_src_class->event = GST_DEBUG_FUNCPTR (gst_sctpsrc_event);
+   /* base_src_class->event = GST_DEBUG_FUNCPTR (gst_sctpsrc_event); */
 
    push_src_class->create = gst_sctpsrc_create;
    /* push_src_class->alloc = GST_DEBUG_FUNCPTR (gst_sctpsrc_alloc); */
@@ -352,9 +354,6 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    struct sockaddr_in6 addr;
    struct sctp_udpencaps encaps;
    struct sctp_event event;
-   uint16_t event_types[] = {SCTP_ASSOC_CHANGE,          SCTP_PEER_ADDR_CHANGE,
-                             SCTP_REMOTE_ERROR,          SCTP_SHUTDOWN_EVENT,
-                             SCTP_ADAPTATION_INDICATION, SCTP_PARTIAL_DELIVERY_EVENT};
    unsigned int i;
    struct sctp_assoc_value av;
    const int on = 1;
@@ -381,16 +380,14 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_socket");
    }
 
-   /* https://github.com/sctplab/usrsctp/blob/0.9.3.0/Manual.md#socket-options
-    */
+   /* https://github.com/sctplab/usrsctp/blob/0.9.3.0/Manual.md#socket-options */
    /* https://tools.ietf.org/html/rfc6458#section-8 */
    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_I_WANT_MAPPED_V4_ADDR,
                           (const void *)&on, (socklen_t)sizeof(int)) < 0) {
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_I_WANT_MAPPED_V4_ADDR");
    }
 
-   /* something about referencing with input data when using one-to-many sockets
-   */
+   /* something about referencing with input data when using one-to-many sockets */
    memset(&av, 0, sizeof(struct sctp_assoc_value));
    av.assoc_id    = SCTP_ALL_ASSOC;
    av.assoc_value = SCTP_DEFAULT_ASSOC_VALUE;
@@ -400,8 +397,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_CONTEXT");
    }
 
-   /* describes SCTP receive information about a received message through
-    * recvmsg() */
+   /* describes SCTP receive information about a received message through recvmsg() */
    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_RECVRCVINFO, &on, sizeof(int)) < 0) {
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_RECVRCVINFO");
    }
@@ -416,17 +412,23 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       }
    }
 
-   /* set the enabled events as specified in event_types[] */
+   /* subscribe to the given events in event_types[] */
+   uint16_t event_types[] = {SCTP_ASSOC_CHANGE,          
+                             SCTP_PEER_ADDR_CHANGE,
+                             SCTP_REMOTE_ERROR,          
+                             SCTP_SHUTDOWN_EVENT,
+                             SCTP_ADAPTATION_INDICATION, 
+                             SCTP_PARTIAL_DELIVERY_EVENT};
    memset(&event, 0, sizeof(event));
    event.se_assoc_id = SCTP_FUTURE_ASSOC;
    event.se_on       = 1;
-   for (i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
-      event.se_type = event_types[i];
-      if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
-                             sizeof(struct sctp_event)) < 0) {
-         GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_EVENT");
-      }
-   }
+   /* for (i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
+    *    event.se_type = event_types[i];
+    *    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
+    *                           sizeof(struct sctp_event)) < 0) {
+    *       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_EVENT");
+    *    }
+    * } */
 
    /* define address for bind */
    memset((void *)&addr, 0, sizeof(struct sockaddr_in6));
@@ -532,6 +534,8 @@ static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
    GST_DEBUG_OBJECT(sctpsrc, "stop");
 
+   //FIXME notify other side of termination!
+
    usrsctp_close(sctpsrc->sock);
    while (usrsctp_finish() != 0) {
       sleep(1);
@@ -596,20 +600,17 @@ gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
  * } */
 
 /* notify subclasses of an event */
-static gboolean gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-  GST_DEBUG_OBJECT (sctpsrc, "event");
+static gboolean gst_sctpsrc_event(GstBaseSrc *src, GstEvent *event) {
+   GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
+   GST_DEBUG_OBJECT(sctpsrc, "event: %s", gst_event_type_get_name (event->type));
 
-  return gst_pad_event_default(src->srcpad, GST_OBJECT(src), event);
+   return gst_pad_event_default(src->srcpad, GST_OBJECT(src), event);
 }
 
 /* ask the subclass to create a buffer with offset and size, the default
  * implementation will call alloc and fill. */
 static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
-   GST_DEBUG_OBJECT(sctpsrc, "create");
-
    ssize_t n;
    int flags;
 
@@ -617,46 +618,66 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
    /* char *buffer = g_malloc(BUFFER_SIZE); */
    /* buf = g_malloc(BUFFER_SIZE); */
    /* [BUFFER_SIZE]; // FIXME: change to a malloc! */
+
    socklen_t infolen;
    struct sctp_rcvinfo rcv_info;
    unsigned int infotype;
    struct sockaddr_in6 from;
    socklen_t from_len;
+   GstBuffer *outbuf = NULL;
 
    // allocate the buffer
    GstMapInfo map;
-   *buf = gst_buffer_new_and_alloc (BUFFER_SIZE);
-   gst_buffer_map (*buf, &map, GST_MAP_READWRITE);
+   outbuf = gst_buffer_new_and_alloc(BUFFER_SIZE);
+   gst_buffer_map(outbuf, &map, GST_MAP_READWRITE);
 
    from_len = (socklen_t)sizeof(struct sockaddr_in6);
    flags    = 0;
    infolen  = (socklen_t)sizeof(struct sctp_rcvinfo);
 
-   n = usrsctp_recvv(sctpsrc->sock, (void *) map.data, BUFFER_SIZE, (struct sockaddr *)&from,
+   n = usrsctp_recvv(sctpsrc->sock, (void *)map.data, BUFFER_SIZE, (struct sockaddr *)&from,
                      &from_len, (void *)&rcv_info, &infolen, &infotype, &flags);
    if (n > 0) {
       if (flags & MSG_NOTIFICATION) {
-         GST_DEBUG_OBJECT(sctpsrc, "Notification of length %llu received.", (unsigned long long)n);
+         union sctp_notification *sn = (union sctp_notification *)map.data;
+         /* switch(sn->sn_header.sn_type) { */
+         /*     case SCTP_COMM_UP: { */
+         GST_DEBUG_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
+                          sn->sn_header.sn_type, (unsigned long long)n);
       } else {
          if (infotype == SCTP_RECVV_RCVINFO) {
-            GST_DEBUG_OBJECT( sctpsrc, "Msg l %4llu from [%s]:%u SID %d "
-                  "SSN %u TSN %u PPID %u contxt %u compl %d",
-                  (unsigned long long)n, inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
-                  ntohs(from.sin6_port), rcv_info.rcv_sid, rcv_info.rcv_ssn, rcv_info.rcv_tsn,
-                  ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0);
+            GST_TRACE_OBJECT(
+                sctpsrc, "Msg len %4llu from [%s]:%u SID %d "
+                         "SSN %u TSN %u PPID %u contxt %u compl %d",
+                (unsigned long long)n, inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
+                ntohs(from.sin6_port), rcv_info.rcv_sid, rcv_info.rcv_ssn, rcv_info.rcv_tsn,
+                ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0);
          } else {
-            GST_DEBUG_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, complete% d.",
-                  (unsigned long long)n,
-                  inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
-                  ntohs(from.sin6_port), (flags & MSG_EOR) ? 1 : 0);
-
-            /* GST_DEBUG_OBJECT(sctpsrc, "%.*s", (int)n, buffer); */
+            GST_TRACE_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, complete %d.",
+                             (unsigned long long)n,
+                             inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
+                             ntohs(from.sin6_port), (flags & MSG_EOR) ? 1 : 0);
          }
-   }
+         print_rtp_header(sctpsrc, map.data);
+         /* hexDump(NULL, map.data, MIN(16, n)); */
+         /* hexDump(NULL, map.data, n); */
+      }
    } else {
-      // TODO: is the correct?
+      GST_WARNING_OBJECT(sctpsrc, "GST_FLOW_EOS");
       return GST_FLOW_EOS;
    }
+
+
+  /* use buffer metadata so receivers can also track the address */
+  /* if (saddr) {
+   *   gst_buffer_add_net_address_meta (outbuf, saddr);
+   *   g_object_unref (saddr);
+   *   saddr = NULL;
+   * } */
+
+   /* gst_buffer_unmap(*buf, &map); */
+
+   *buf = GST_BUFFER_CAST(outbuf);
 
    /* *buf = buffer; */
    return GST_FLOW_OK;
@@ -741,6 +762,13 @@ static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, vo
       free(data);
    }
    return (1);
+}
+
+static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer) {
+   RTPHeader *rtph = (RTPHeader *)buffer;
+   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u, PT:%3u, Seq:%5u, TS:%5u, ssrc:%9u",
+          rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
+          rtph->seq_num, rtph->TS, rtph->ssrc);
 }
 
 // vim: ft=c

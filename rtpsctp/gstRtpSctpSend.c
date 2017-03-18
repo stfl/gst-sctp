@@ -141,7 +141,6 @@ void
 gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 {
    GstElement *pipeline, *source, *sink, *encoder, *rtppay;
-   /* GError *error = NULL; */
 
    /* create pipeline */
    pipeline = gst_pipeline_new ("pipeline");
@@ -178,6 +177,17 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       g_print ("failed to create element of type 'rtph264pay'\n");
       /* return -1; */
    }
+
+   /* GstCaps *rtppay_caps = gst_caps_new_simple ("application/x-rtp", */
+/* media=(string)video, */
+/* clock-rate=(int)90000, */
+/* encoding-name=(string)H264, */
+/* payload=(int)96, */
+/* ssrc=(uint)950264809, */
+/* timestamp-offset=(uint)2250056347, */
+/* seqnum-offset=(uint)18833, */
+/* a-framerate=(string)25 */
+         /* NULL); */
 
    sink = gst_element_factory_make("sctpsink", "sink");
    if (!sink) {

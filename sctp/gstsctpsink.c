@@ -96,7 +96,13 @@ static gboolean gst_sctpsink_query (GstBaseSink * sink, GstQuery * query);
 /* static GstFlowReturn gst_sctpsink_preroll (GstBaseSink * sink, GstBuffer * buffer); */
 static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer);
 static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list);
+
 static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data);
+static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data);
+static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data);
+
+
+static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer);
 
 /* usrsctp functions */
 
@@ -148,7 +154,7 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
    /* base_sink_class->prepare_list = gst_sctpsink_prepare_list; */
    /* base_sink_class->preroll = gst_sctpsink_preroll; */
    base_sink_class->render = gst_sctpsink_render;
-   base_sink_class->render_list = gst_sctpsink_render_list;
+   /* base_sink_class->render_list = gst_sctpsink_render_list; */
 
    g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HOST,
          g_param_spec_string ("host", "Host",
@@ -729,12 +735,19 @@ static GstFlowReturn
 gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer)
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
-   /* GST_DEBUG_OBJECT (sctpsink, "render"); */
 
-   usrsctp_sendv(sctpsink->sock, buffer, gst_buffer_get_size(buffer), NULL, 0, NULL, 0,
+   GstMapInfo map;
+   gst_buffer_map (buffer, &map, GST_MAP_READ);
+
+   GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%lu", gst_buffer_get_size(buffer));
+
+   usrsctp_sendv(sctpsink->sock, map.data, gst_buffer_get_size(buffer), NULL, 0, NULL, 0,
          SCTP_SENDV_NOINFO, 0);
 
-   GST_DEBUG("got a buffer of size:%lu", gst_buffer_get_size(buffer));
+   print_rtp_header(sctpsink, map.data);
+   /* hexDump(NULL, buffer, MIN(16, gst_buffer_get_size(buffer))); */
+
+   gst_buffer_unmap (buffer, &map);
 
    return GST_FLOW_OK;
 }
@@ -743,22 +756,80 @@ gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer)
 static GstFlowReturn
 gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list)
 {
-   /* GstSctpSink *sctpsink = GST_SCTPSINK (sink); */
+   GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
-   gst_buffer_list_foreach(buffer_list, sctpsink_iter_render_list, sink);
+   GstBuffer *buf;
+   guint size = 0;
+
+   gst_buffer_list_foreach (buffer_list, buffer_list_calc_size, &size);
+   GST_LOG_OBJECT (sink, "total size of buffer list %p: %u", buffer_list, size);
+
+   /* copy all buffers in the list into one single buffer, so we can use
+    * the normal render function (FIXME: optimise to avoid the memcpy) */
+   buf = gst_buffer_new ();
+   gst_buffer_list_foreach (buffer_list, buffer_list_copy_data, buf);
+   g_assert (gst_buffer_get_size (buf) == size);
+
+   gst_sctpsink_render (sink, buf);
+   gst_buffer_unref (buf);
 
    return GST_FLOW_OK;
 }
 
 static gboolean
+buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data)
+{
+  guint *p_size = data;
+  gsize buf_size;
+
+  buf_size = gst_buffer_get_size (*buf);
+  GST_TRACE ("buffer %u has size %" G_GSIZE_FORMAT, idx, buf_size);
+  *p_size += buf_size;
+
+  return TRUE;
+}
+
+static gboolean
+buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data)
+{
+  GstBuffer *dest = data;
+  guint num, i;
+
+  if (idx == 0)
+    gst_buffer_copy_into (dest, *buf, GST_BUFFER_COPY_METADATA, 0, -1);
+
+  num = gst_buffer_n_memory (*buf);
+  for (i = 0; i < num; ++i) {
+    GstMemory *mem;
+
+    mem = gst_buffer_get_memory (*buf, i);
+    gst_buffer_append_memory (dest, mem);
+  }
+
+  return TRUE;
+}
+
+
+static gboolean
 sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
    GstSctpSink *sctpsink = GST_SCTPSINK(user_data);
 
-   GST_DEBUG_OBJECT(sctpsink, "iter through the list [%u]:%lu", idx, gst_buffer_get_size(*buffer));
+   GST_DEBUG_OBJECT(sctpsink, "iter through the list [%u]:%4lu", idx, gst_buffer_get_size(*buffer));
    usrsctp_sendv(sctpsink->sock, buffer, gst_buffer_get_size(*buffer), NULL, 0, NULL, 0,
          SCTP_SENDV_NOINFO, 0);
+   /* if (idx == 0) { */
+   /*    print_rtp_header(sctpsink, (unsigned char *)buffer+2); */
+   /* }  */
+   /* hexDump(NULL, buffer, MIN(gst_buffer_get_size(*buffer), 16)); */
 
    return TRUE;
+}
+
+static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer) {
+   RTPHeader *rtph = (RTPHeader *)buffer;
+   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u, PT:%3u, Seq:%5u, TS:%5u, ssrc:%9u",
+          rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
+          rtph->seq_num, rtph->TS, rtph->ssrc);
 }
 
 // vim: ft=c
