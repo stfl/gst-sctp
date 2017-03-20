@@ -10,7 +10,9 @@ gstsctp = library('gstsctp',
       dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep, usrsctp_dep, th_dep],
       c_args : [gst_args, Werror_args],
       include_directories : configinc,
-      install_dir : plugins_install_dir,
+      install_dir : meson.build_root(),
+#plugins_install_dir,
+      install_rpath : usrsctp_build_path,
       install : true,
       )
 

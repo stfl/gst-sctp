@@ -62,6 +62,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL  9988
 #define SCTP_DEFAULT_UDP_ENCAPS             FALSE
 
+#define SCTP_PPID       33
+#define SCTP_SID        1
+#define SCTP_ASSOC_ID   1
+
 enum
 {
    PROP_0,
@@ -101,8 +105,8 @@ static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpoint
 static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data);
 static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data);
 
-
 static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer);
+static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str);
 
 /* usrsctp functions */
 
@@ -196,8 +200,7 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
 static void
 gst_sctpsink_init (GstSctpSink * sctpsink)
 {
-   GstPad *sinkpad = GST_BASE_SINK_PAD(sctpsink);
-   GST_INFO_OBJECT(sctpsink, "sctpsink: name: %s\n",GST_PAD_NAME(sinkpad));
+   /* GstPad *sinkpad = GST_BASE_SINK_PAD(sctpsink); */
 
    sctpsink->host = g_strdup (SCTP_DEFAULT_HOST);
    sctpsink->port = SCTP_DEFAULT_PORT;
@@ -271,6 +274,7 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
       case PROP_UDP_ENCAPS_PORT_LOCAL:
          g_value_set_int (value, sctpsink->udp_encaps_port_local);
          break;
+         // FIXME add usrsctp stats struct as ro property!
 
       default:
          G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
@@ -295,7 +299,7 @@ gst_sctpsink_finalize (GstSctpSink * sctpsink)
 {
    GST_DEBUG_OBJECT (sctpsink, "finalize");
 
-   // FIXME: null-out all attributes 
+   // FIXME: null-out all attributes
 
    g_free (sctpsink->host);
    sctpsink->host = NULL;
@@ -344,7 +348,7 @@ usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, s
    const char *name;
    uint16_t port;
 
-   GST_INFO("usrsctp_receive_cb");
+   GST_ERROR("usrsctp_receive_cb");
 
    if (data) {
       if (flags & MSG_NOTIFICATION) {
@@ -395,11 +399,10 @@ usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, s
          }
       }
       free(data);
-      GST_DEBUG("post free");
    } else {
       // FIXME handle this properly
       // send the info upstream somehow....
-      GST_INFO("received data NULL");
+      GST_ERROR("received data NULL");
       usrsctp_close(sock);
    }
    return (1);
@@ -411,8 +414,6 @@ static gboolean
 gst_sctpsink_start (GstBaseSink * sink)
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
-
-   GST_INFO_OBJECT (sctpsink, "start sctpsink");
 
    /* struct socket *sock; */
    struct sockaddr *addr, *addrs;
@@ -447,6 +448,7 @@ gst_sctpsink_start (GstBaseSink * sink)
       addr6.sin6_family = AF_INET6;
       addr6.sin6_port = htons( sctpsink->src_port );
       addr6.sin6_addr = in6addr_any;
+      GST_TRACE_OBJECT(sctpsink, "binding");
       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
       }
@@ -474,6 +476,7 @@ gst_sctpsink_start (GstBaseSink * sink)
    addr6.sin6_family = AF_INET6;
    addr4.sin_port = htons(sctpsink->port);
    addr6.sin6_port = htons(sctpsink->port);
+   GST_TRACE_OBJECT(sctpsink, "connecting");
    if (inet_pton(AF_INET6, sctpsink->host, &addr6.sin6_addr) == 1) {
       if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
@@ -485,108 +488,25 @@ gst_sctpsink_start (GstBaseSink * sink)
    } else {
       GST_ERROR_OBJECT(sctpsink, "Illegal destination address");
    }
+
    if ((n = usrsctp_getladdrs(sctpsink->sock, 0, &addrs)) < 0) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_getladdrs");
    } else {
-      addr_string = g_string_new("Local addresses: ");
-      /* GString *addr_string = g_string_new(NULL);  */
-      addr = addrs;
-      for (i = 0; i < n; i++) {
-         if (i > 0) {
-            g_string_append(addr_string, ", ");
-         }
-         switch (addr->sa_family) {
-            case AF_INET:
-               {
-                  struct sockaddr_in *sin;
-                  char buf[INET_ADDRSTRLEN];
-                  const char *name;
-
-                  sin = (struct sockaddr_in *)addr;
-                  name = inet_ntop(AF_INET, &sin->sin_addr, buf, INET_ADDRSTRLEN);
-                  g_string_append(addr_string, name);
-#ifndef HAVE_SA_LEN
-                  addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in));
-#endif
-                  break;
-               }
-            case AF_INET6:
-               {
-                  struct sockaddr_in6 *sin6;
-                  char buf[INET6_ADDRSTRLEN];
-                  const char *name;
-
-                  sin6 = (struct sockaddr_in6 *)addr;
-                  name = inet_ntop(AF_INET6, &sin6->sin6_addr, buf, INET6_ADDRSTRLEN);
-                  g_string_append(addr_string, name);
-#ifndef HAVE_SA_LEN
-                  addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in6));
-#endif
-                  break;
-               }
-            default:
-               break;
-         }
-#ifdef HAVE_SA_LEN
-         addr = (struct sockaddr *)((caddr_t)addr + addr->sa_len);
-#endif
-      }
-      /* GST_INFO_OBJECT(sctpsink, "%s", addr_string->str); */
+      addr_string = g_string_new("");
+      n = usrsctp_addrs_to_string((GstElement *)sctpsink, addrs, n, addr_string);
+      GST_INFO_OBJECT(sctpsink, "SCTP Local addresses: %s", addr_string->str);
       g_string_free(addr_string, TRUE);
       usrsctp_freeladdrs(addrs);
    }
-
-   // get the peer addresses..
    if ((n = usrsctp_getpaddrs(sctpsink->sock, 0, &addrs)) < 0) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_getpaddrs");
    } else {
-      addr2_string = g_string_new("Peer addresses: ");
-      addr = addrs;
-      for (i = 0; i < n; i++) {
-         if (i > 0) {
-            g_string_append(addr2_string, ", ");
-         }
-         switch (addr->sa_family) {
-            case AF_INET:
-               {
-                  struct sockaddr_in *sin;
-                  char buf[INET_ADDRSTRLEN];
-                  const char *name;
-
-                  sin = (struct sockaddr_in *)addr;
-                  name = inet_ntop(AF_INET, &sin->sin_addr, buf, INET_ADDRSTRLEN);
-                  g_string_append(addr2_string, name);
-#ifndef HAVE_SA_LEN
-                  addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in));
-#endif
-                  break;
-               }
-            case AF_INET6:
-               {
-                  struct sockaddr_in6 *sin6;
-                  char buf[INET6_ADDRSTRLEN];
-                  const char *name;
-
-                  sin6 = (struct sockaddr_in6 *)addr;
-                  name = inet_ntop(AF_INET6, &sin6->sin6_addr, buf, INET6_ADDRSTRLEN);
-                  g_string_append(addr2_string, name);
-#ifndef HAVE_SA_LEN
-                  addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in6));
-#endif
-                  break;
-               }
-            default:
-               break;
-         }
-#ifdef HAVE_SA_LEN
-         addr = (struct sockaddr *)((caddr_t)addr + addr->sa_len);
-#endif
-      }
-      /* GST_INFO_OBJECT(sctpsink, "%s", addr2_string->str); */
-      g_string_free(addr2_string, TRUE);
+      addr_string = g_string_new("");
+      n = usrsctp_addrs_to_string((GstElement *)sctpsink, addrs, n, addr_string);
+      GST_INFO_OBJECT(sctpsink, "SCTP Peer addresses: %s", addr_string->str);
+      g_string_free(addr_string, TRUE);
       usrsctp_freepaddrs(addrs);
    }
-
    return TRUE;
 }
 
@@ -731,32 +651,39 @@ gst_sctpsink_query (GstBaseSink * sink, GstQuery * query)
 
 /** Called when a buffer should be presented or output, at the correct moment if the GstBaseSink has
  * been set to sync to the clock. */
-static GstFlowReturn
-gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer)
-{
+static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer) {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+   int n;
 
    GstMapInfo map;
    gst_buffer_map (buffer, &map, GST_MAP_READ);
+   GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%4lu", gst_buffer_get_size(buffer));
 
-   GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%lu", gst_buffer_get_size(buffer));
+   struct sctp_sndinfo snd_info;
 
-   usrsctp_sendv(sctpsink->sock, map.data, gst_buffer_get_size(buffer), NULL, 0, NULL, 0,
-         SCTP_SENDV_NOINFO, 0);
+   snd_info.snd_sid = SCTP_SID;
+   snd_info.snd_flags = SCTP_UNORDERED;
+   snd_info.snd_ppid = htonl(SCTP_PPID);
+   snd_info.snd_context = 0;
+   snd_info.snd_assoc_id = SCTP_ASSOC_ID;
+
+   if (usrsctp_sendv(sctpsink->sock, map.data, gst_buffer_get_size(buffer),
+         NULL, 0, // struct sockaddr *addr
+         (void *)&snd_info, sizeof(struct sctp_sndinfo),
+         SCTP_SENDV_SNDINFO, 0) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_sendv failed: %s", strerror(errno));
+      gst_sctpsink_stop((GstBaseSink *)sctpsink);
+   }
 
    print_rtp_header(sctpsink, map.data);
-   /* hexDump(NULL, buffer, MIN(16, gst_buffer_get_size(buffer))); */
-
    gst_buffer_unmap (buffer, &map);
 
    return GST_FLOW_OK;
 }
 
 /** Render a BufferList */
-static GstFlowReturn
-gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list)
-{
-   GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list) {
+   /* GstSctpSink *sctpsink = GST_SCTPSINK (sink); */
 
    GstBuffer *buf;
    guint size = 0;
@@ -776,9 +703,7 @@ gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list)
    return GST_FLOW_OK;
 }
 
-static gboolean
-buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data)
-{
+static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data) {
   guint *p_size = data;
   gsize buf_size;
 
@@ -789,9 +714,7 @@ buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data)
   return TRUE;
 }
 
-static gboolean
-buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data)
-{
+static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data) {
   GstBuffer *dest = data;
   guint num, i;
 
@@ -809,9 +732,7 @@ buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data)
   return TRUE;
 }
 
-
-static gboolean
-sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
+static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
    GstSctpSink *sctpsink = GST_SCTPSINK(user_data);
 
    GST_DEBUG_OBJECT(sctpsink, "iter through the list [%u]:%4lu", idx, gst_buffer_get_size(*buffer));
@@ -827,9 +748,55 @@ sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
 
 static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer) {
    RTPHeader *rtph = (RTPHeader *)buffer;
-   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u, PT:%3u, Seq:%5u, TS:%5u, ssrc:%9u",
+   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u PT:%u, Seq:%5u, TS:%10u, ssrc:%9u",
           rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
           rtph->seq_num, rtph->TS, rtph->ssrc);
+}
+
+static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str) {
+   struct sockaddr *addr;
+   addr = addrs;
+   for (int i = 0; i < n; i++) {
+      if (i > 0) {
+         g_string_append(str, ", ");
+      }
+      switch (addr->sa_family) {
+         case AF_INET:
+            {
+               struct sockaddr_in *sin;
+               char buf[INET_ADDRSTRLEN];
+               const char *name;
+
+               sin = (struct sockaddr_in *)addr;
+               name = inet_ntop(AF_INET, &sin->sin_addr, buf, INET_ADDRSTRLEN);
+               g_string_append(str, name);
+#ifndef HAVE_SA_LEN
+               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in));
+#endif
+               break;
+            }
+         case AF_INET6:
+            {
+               struct sockaddr_in6 *sin6;
+               char buf[INET6_ADDRSTRLEN];
+               const char *name;
+
+               sin6 = (struct sockaddr_in6 *)addr;
+               name = inet_ntop(AF_INET6, &sin6->sin6_addr, buf, INET6_ADDRSTRLEN);
+               g_string_append(str, name);
+#ifndef HAVE_SA_LEN
+               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in6));
+#endif
+               break;
+            }
+         default:
+            break;
+      }
+#ifdef HAVE_SA_LEN
+      addr = (struct sockaddr *)((caddr_t)addr + addr->sa_len);
+#endif
+   }
+   return str->len;
 }
 
 // vim: ft=c

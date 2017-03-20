@@ -4,10 +4,16 @@ let g:neomake_c_clangcheck_args = ['%:p',
          \ ]
          " 'extra-arg="-Werror -Wall"',
 
-let g:neomake_enabled_makers = ['ninja', 'clean', 'meson', 'rm']
+let g:neomake_enabled_makers = ['install', 'ninja', 'clean', 'meson', 'rm']
 let g:neomake_ninja_maker = {
          \ 'exe' : 'ninja',
          \ 'cwd' : g:localvimrc_script_dir.'/build',
+         \ 'errorformat' : '%-G%f:%s:,%-G%f:%l: %#error: %#(Each undeclared identifier is reported only%.%#,%-G%f:%l: %#error: %#for each function it appears%.%#,%-GIn file included%.%#,%-G %#from %f:%l\,,%f:%l:%c: %trror: %m,%f:%l:%c: %tarning: %m,%I%f:%l:%c: note: %m,%f:%l:%c: %m,%f:%l: %trror: %m,%f:%l: %tarning: %m,%I%f:%l: note: %m,%f:%l: %m'
+         \ }
+let g:neomake_install_maker = {
+         \ 'exe' : 'ninja',
+         \ 'cwd' : g:localvimrc_script_dir.'/build',
+         \ 'args' : 'install',
          \ 'errorformat' : '%-G%f:%s:,%-G%f:%l: %#error: %#(Each undeclared identifier is reported only%.%#,%-G%f:%l: %#error: %#for each function it appears%.%#,%-GIn file included%.%#,%-G %#from %f:%l\,,%f:%l:%c: %trror: %m,%f:%l:%c: %tarning: %m,%I%f:%l:%c: note: %m,%f:%l:%c: %m,%f:%l: %trror: %m,%f:%l: %tarning: %m,%I%f:%l: note: %m,%f:%l: %m'
          \ }
 
@@ -20,7 +26,7 @@ let g:neomake_clean_maker = {
 let g:neomake_rm_maker = {
          \ 'exe' : 'rm',
          \ 'cwd' : g:localvimrc_script_dir,
-         \ 'args' : ['build', '-rf'],
+         \ 'args' : ['build', '-rvf'],
          \ }
 let g:neomake_meson_maker = {
          \ 'exe' : 'meson',
@@ -41,8 +47,14 @@ set foldnestmax=3
 augroup MyProject
    autocmd!
    autocmd BufNewFile,BufRead *.[ch] set filetype=c
-   autocmd BufWritePost *.[ch] Neomake! ninja
+   autocmd BufWritePost *.[ch] Neomake! install
+   " autocmd User NeomakeFinished call OnNeomakeFinished()
 augroup END
+
+function! OnNeomakeFinished()
+   echom "install"
+   Neomake! install
+endfunction
 
 " :cnf   > first error in qf
 " :cn    > quickfix next

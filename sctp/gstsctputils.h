@@ -1,3 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+
 void usrsctp_debug_printf(const char *format, ...);
 void hexDump (char *desc, void *addr, int len);
 /* void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer); */

@@ -236,6 +236,9 @@ usrsctp_build_path = join_paths(meson.source_root(), 'usrsctp/build')
 message('expecting libusrsctp at: ' + usrsctp_build_path)
 usrsctp_dep = cc.find_library('libusrsctp', dirs : usrsctp_build_path)
 
+# embedd the library path into the executable > with setuid LD_LIBRARY_PATH doesn't work
+Rargs = ['-R '+usrsctp_build_path ]
+
 Werror_args = [ # '-Werror', # can also be enabled with meson -werror
                 '-Wno-error=unused-variable',
                 '-Wno-error=unused-function',

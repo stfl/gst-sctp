@@ -43,6 +43,7 @@ struct _GstRtpSctpReceiver
 
    gboolean paused_for_buffering;
    guint timer_id;
+   guint stats_timer_id;
 };
 
 GstRtpSctpReceiver *gst_RtpSctpReceiver_new (void);
@@ -52,9 +53,9 @@ void gst_RtpSctpReceiver_create_pipeline_playbin (GstRtpSctpReceiver *RtpSctpRec
 void gst_RtpSctpReceiver_start (GstRtpSctpReceiver *RtpSctpReceiver);
 void gst_RtpSctpReceiver_stop (GstRtpSctpReceiver *RtpSctpReceiver);
 
-static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus,
-      GstMessage *message, gpointer data);
+static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus, GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
+static gboolean stats_timer (gpointer priv);
 
 
 gboolean verbose;
@@ -142,12 +143,12 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          NULL);
 
    GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
-         "media", G_TYPE_STRING, "video",
-         "clock-rate", G_TYPE_INT, 90000,
-         "encoding-name", G_TYPE_STRING, "H264",
-         "a-framerate", G_TYPE_STRING, "25",
+         "media",              G_TYPE_STRING, "video",
+         "clock-rate",         G_TYPE_INT,    90000,
+         "encoding-name",      G_TYPE_STRING, "H264",
+         "a-framerate",        G_TYPE_STRING, "25",
          "packetization-mode", G_TYPE_STRING, "1",
-         "payload", G_TYPE_INT, 96,
+         "payload",            G_TYPE_INT,    96,
          NULL);
 
    GstElement *rtpdepay = gst_element_factory_make("rtph264depay", "rtpdepay");
@@ -156,6 +157,17 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
       /* return -1; */
    }
 
+   GstElement *jitterbuffer = gst_element_factory_make("rtpjitterbuffer", "jitterbuffer");
+   if (!jitterbuffer) {
+      g_critical ("Failed to create element of type 'rtpjitterbuffer'\n");
+      /* return -1; */
+   }
+   g_object_set(G_OBJECT(jitterbuffer),
+         "latency", 100,
+         "max-dropout-time", 300,
+         "max-misorder-time", 200, // ms
+         NULL );
+
    GstElement *decoder = gst_element_factory_make("avdec_h264", "decoder");
    if (!decoder) {
       g_critical ("failed to create element of type 'avdec_h264'\n");
@@ -163,15 +175,14 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    }
 
    GstCaps *decode_caps = gst_caps_new_simple("video/x-h264",
-         "stream-format", G_TYPE_STRING, "avc",
-         "alignment", G_TYPE_STRING, "au",
-         "level", G_TYPE_STRING, "3.1",
-         "width", G_TYPE_INT, 1280,
-         "height", G_TYPE_INT, 720,
-         "framerate", GST_TYPE_FRACTION, 25, 1,
-         "pixel-aspect-ratio", GST_TYPE_FRACTION, 1, 1,        
+         "stream-format",      G_TYPE_STRING,     "avc",
+         "alignment",          G_TYPE_STRING,     "au",
+         "level",              G_TYPE_STRING,     "3.1",
+         "width",              G_TYPE_INT,        1280,
+         "height",             G_TYPE_INT,        720,
+         "framerate",          GST_TYPE_FRACTION, 25,    1,
+         "pixel-aspect-ratio", GST_TYPE_FRACTION, 1,     1,
          NULL);
-
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
    if (!videoconvert) {
@@ -186,40 +197,42 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    }
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, decoder, videoconvert, videosink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, decoder, videoconvert, videosink, NULL);
 
    /* link */
  /* rtpdepay, decoder, */
 
-   if (!gst_element_link_filtered(source, rtpdepay, src_caps)) {
-      g_warning ("Failed to link filterd source and rtpdepay!\n");
+   if (!gst_element_link_filtered(source, jitterbuffer, src_caps)) {
+      g_warning ("Failed to link filterd source and jitterbuffer!\n");
    }
    gst_caps_unref(src_caps);
 
+   if (!gst_element_link(jitterbuffer, rtpdepay)) {
+      g_critical ("Failed to link jitterbuffer and rtpdepay'\n");
+   }
+
    if (!gst_element_link_filtered(rtpdepay, decoder, decode_caps)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
+      g_critical ("Failed to link rtpdepay and decoder'\n");
    }
    gst_caps_unref(decode_caps);
 
    if (!gst_element_link(decoder, videoconvert)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
+      g_critical ("Failed to link decoder and videoconvert'\n");
    }
 
    if (!gst_element_link(videoconvert, videosink)) {
-      g_critical ("Failed to link source and rtpdepay'\n");
+      g_critical ("Failed to link videoconvert and videosink'\n");
    }
 
    RtpSctpReceiver->pipeline = pipeline;
 
+
    gst_pipeline_set_auto_flush_bus (GST_PIPELINE (pipeline), FALSE);
    RtpSctpReceiver->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
-   gst_bus_add_watch (RtpSctpReceiver->bus, gst_RtpSctpReceiver_handle_message,
-         RtpSctpReceiver);
+   gst_bus_add_watch (RtpSctpReceiver->bus, gst_RtpSctpReceiver_handle_message, RtpSctpReceiver);
 
-   RtpSctpReceiver->source_element =
-      gst_bin_get_by_name (GST_BIN (pipeline), "source");
-   RtpSctpReceiver->sink_element =
-      gst_bin_get_by_name (GST_BIN (pipeline), "videosink");
+   RtpSctpReceiver->source_element = gst_bin_get_by_name (GST_BIN (pipeline), "source");
+   RtpSctpReceiver->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "videosink");
 }
 
 void
@@ -287,7 +300,7 @@ static void
 gst_RtpSctpReceiver_handle_paused_to_playing (GstRtpSctpReceiver *
       RtpSctpReceiver)
 {
-
+   RtpSctpReceiver->stats_timer_id = g_timeout_add (3000, stats_timer, RtpSctpReceiver);
 }
 
 static void
@@ -447,9 +460,35 @@ gst_RtpSctpReceiver_handle_message (GstBus * bus, GstMessage * message,
 static gboolean
 onesecond_timer (gpointer priv)
 {
-   //GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
+   GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
 
-   g_print (".\n");
+   /* g_print (".\n"); */
+
+   return TRUE;
+}
+
+static gboolean
+stats_timer (gpointer priv)
+{
+   GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
+   GstElement *jbuf = gst_bin_get_by_name (GST_BIN (RtpSctpReceiver->pipeline), "jitterbuffer");
+
+   guint64 num_pushed, num_lost, num_late, num_duplicate=0;
+   GstStructure *stats;
+   g_object_get(G_OBJECT(jbuf), "stats", &stats, NULL);
+   if (! gst_structure_get (stats,
+            "num-pushed",     G_TYPE_UINT64, &num_pushed,
+            "num-lost",       G_TYPE_UINT64, &num_lost,
+            "num-late",       G_TYPE_UINT64, &num_late,
+            "num-duplicates", G_TYPE_UINT64, &num_duplicate,
+            NULL)) {
+      g_error("error getting the jitterbuffer stats");
+   }
+   g_print("Jitterbuffer STATS num-pushed: %8lu, num-lost: %6lu, num-late: %6lu, num-duplicates: %6lu\n",
+         num_pushed, num_lost, num_late, num_duplicate);
+
+   // FIXME free(stats);
+   /* gst_structure_unref(stats); */
 
    return TRUE;
 }

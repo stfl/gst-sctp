@@ -148,7 +148,7 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
    /* base_src_class->negotiate = GST_DEBUG_FUNCPTR (gst_sctpsrc_negotiate); */
    /* base_src_class->fixate = GST_DEBUG_FUNCPTR (gst_sctpsrc_fixate); */
    base_src_class->set_caps = GST_DEBUG_FUNCPTR (gst_sctpsrc_set_caps);
-   base_src_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_sctpsrc_decide_allocation);
+   /* base_src_class->decide_allocation = GST_DEBUG_FUNCPTR (gst_sctpsrc_decide_allocation); */
    base_src_class->start = GST_DEBUG_FUNCPTR(gst_sctpsrc_start);
    base_src_class->stop  = GST_DEBUG_FUNCPTR(gst_sctpsrc_stop);
    /* base_src_class->get_times = GST_DEBUG_FUNCPTR (gst_sctpsrc_get_times); */
@@ -349,7 +349,6 @@ static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * quer
 static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
-   GST_DEBUG_OBJECT(sctpsrc, "start");
 
    struct sockaddr_in6 addr;
    struct sctp_udpencaps encaps;
@@ -448,84 +447,6 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen");
    }
 
-   // the loop...
-   /*    while (1) {
-    *       from_len = (socklen_t)sizeof(struct sockaddr_in6);
-    *       flags = 0;
-    *       infolen = (socklen_t)sizeof(struct sctp_rcvinfo);
-    *       // blocking > returns a lot of flags
-    *       n = usrsctp_recvv(sctpsrc->sock, (void*)buffer, BUFFER_SIZE, (struct
-    * sockaddr*)&addr,
-    *           &from_len, (void*)&rcv_info, &infolen, &infotype, &flags);
-    *       if (n > 0) {
-    *          if (flags & MSG_NOTIFICATION) {
-    *             GST_DEBUG_OBJECT(
-    *                 sctpsrc, "Notification of length %llu received.",
- *(unsigned
-    * long long)n);
-    *          } else {
-    *             if (infotype == SCTP_RECVV_RCVINFO) {
-    *                GST_DEBUG_OBJECT(sctpsrc,
-    *                    "Msg of length %llu received from %s:%u on stream %d
-    * with SSN %u and TSN "
-    *                    "%u, PPID %u, context %u, complete %d.",
-    *                    (unsigned long long)n,
-    *                    inet_ntop(AF_INET6, &addr.sin6_addr, name,
-    * INET6_ADDRSTRLEN),
-    *                    ntohs(addr.sin6_port), rcv_info.rcv_sid,
-    * rcv_info.rcv_ssn,
-    * rcv_info.rcv_tsn,
-    *                    ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags
- *&
-    * MSG_EOR) ? 1 : 0);
-    *
-    *                // the echo
-    *             [>                      if (flags & MSG_EOR) { // End of
- *Record
-    * <]
-    *             [>                         struct sctp_sndinfo snd_info; <]
-    *             [>  <]
-    *             [>                         snd_info.snd_sid =
- *rcv_info.rcv_sid;
-    * <]
-    *             [>                         snd_info.snd_flags = 0; <]
-    *             [>                         if (rcv_info.rcv_flags &
-    * SCTP_UNORDERED) { <]
-    *             [>                            snd_info.snd_flags |=
-    * SCTP_UNORDERED; <]
-    *             [>                         } <]
-    *             [>                         snd_info.snd_ppid =
-    * rcv_info.rcv_ppid; <]
-    *             [>                         snd_info.snd_context = 0; <]
-    *             [>                         snd_info.snd_assoc_id =
-    * rcv_info.rcv_assoc_id; <]
-    *             [>                         if (usrsctp_sendv(sctpsrc->sock,
-    * buffer, (size_t)n,
-    * NULL, <]
-    *             [>    0, <]
-    *             [>    &snd_info, <]
-    *             [>                                  (socklen_t)sizeof(struct
-    * sctp_sndinfo), <]
-    *             [>    SCTP_SENDV_SNDINFO, 0) < 0) { <]
-    *             [>                            GST_ERROR_OBJECT(sctpsrc,
-    * "sctp_sendv"); <]
-    *             [>                         } <]
-    *             [>                      } <]
-    *             [> } else { <]
-    *                GST_DEBUG_OBJECT(sctpsrc, "Msg of length %llu received from
-    * %s:%u, complete
-    * %d.",
-    *                    (unsigned long long)n,
-    *                    inet_ntop(AF_INET6, &addr.sin6_addr, name,
-    * INET6_ADDRSTRLEN),
-    *                    ntohs(addr.sin6_port), (flags & MSG_EOR) ? 1 : 0);
-    *             }
-    *             [> GST_DEBUG_OBJECT(sctpsrc, "%.*s", (int)n, buffer); <]
-    *          }
-    *       } else {
-    *          break;
-   *       }
- *} */
    return TRUE;
 }
 
@@ -642,25 +563,24 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
          union sctp_notification *sn = (union sctp_notification *)map.data;
          /* switch(sn->sn_header.sn_type) { */
          /*     case SCTP_COMM_UP: { */
-         GST_DEBUG_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
+         GST_TRACE_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
                           sn->sn_header.sn_type, (unsigned long long)n);
       } else {
          if (infotype == SCTP_RECVV_RCVINFO) {
             GST_TRACE_OBJECT(
-                sctpsrc, "Msg len %4llu from [%s]:%u SID %d "
-                         "SSN %u TSN %u PPID %u contxt %u compl %d",
+                sctpsrc, "Msg len %4llu from [%s]:%u SID %d, "
+                         "SSN %u, TSN %u, PPID %u, contxt %u, compl %d, U %d",
                 (unsigned long long)n, inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
                 ntohs(from.sin6_port), rcv_info.rcv_sid, rcv_info.rcv_ssn, rcv_info.rcv_tsn,
-                ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0);
+                ntohl(rcv_info.rcv_ppid), rcv_info.rcv_context, (flags & MSG_EOR) ? 1 : 0,
+                (rcv_info.rcv_flags & SCTP_UNORDERED) ? 1 : 0);
          } else {
-            GST_TRACE_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, complete %d.",
+            GST_TRACE_OBJECT(sctpsrc, "Msg of length %llu received from %s:%u, compl %d",
                              (unsigned long long)n,
                              inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
                              ntohs(from.sin6_port), (flags & MSG_EOR) ? 1 : 0);
          }
          print_rtp_header(sctpsrc, map.data);
-         /* hexDump(NULL, map.data, MIN(16, n)); */
-         /* hexDump(NULL, map.data, n); */
       }
    } else {
       GST_WARNING_OBJECT(sctpsrc, "GST_FLOW_EOS");
