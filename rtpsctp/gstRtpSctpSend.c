@@ -44,6 +44,7 @@ struct __GstRtpSctpSender
    GstElement *sink_element;
    GstElement *sctpsink;
    GstElement *queue;
+   GstElement *encoder;
 
    gboolean paused_for_buffering;
    guint timer_id;
@@ -57,7 +58,7 @@ void gst_RtpSctpSender_stop (_GstRtpSctpSender *RtpSctpSender);
 
 static gboolean gst_RtpSctpSender_handle_message (GstBus *bus,
       GstMessage *message, gpointer data);
-static gboolean onesecond_timer (gpointer priv);
+static gboolean stats_timer (gpointer priv);
 
 
 gboolean verbose;
@@ -128,6 +129,10 @@ gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
       gst_object_unref (RtpSctpSender->queue);
       RtpSctpSender->queue = NULL;
    }
+   if (RtpSctpSender->encoder) {
+      gst_object_unref (RtpSctpSender->encoder);
+      RtpSctpSender->encoder = NULL;
+   }
 
    if (RtpSctpSender->pipeline) {
       gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
@@ -178,6 +183,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       g_print ("failed to create element of type 'rtph264pay'\n");
       /* return -1; */
    }
+   gst_util_set_object_arg(G_OBJECT(rtppay), "mtu", "65536");
 
    /* GstCaps *rtppay_caps = gst_caps_new_simple ("application/x-rtp", */
 /* media=(string)video, */
@@ -190,7 +196,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 /* a-framerate=(string)25 */
          /* NULL); */
 
-   GstElement *queue = gst_element_factory_make("queue", "queue");
+   GstElement *queue = gst_element_factory_make("queue2", "queue");
    if (!queue) {
       g_print ("Failed to create element of type 'queue'\n");
       /* return -1; */
@@ -240,6 +246,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    RtpSctpSender->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "sink");
 
    RtpSctpSender->sctpsink = sink;
+   RtpSctpSender->encoder = encoder;
    RtpSctpSender->queue = queue;
 }
 
@@ -307,7 +314,7 @@ static void
 gst_RtpSctpSender_handle_paused_to_playing (_GstRtpSctpSender *
       RtpSctpSender)
 {
-   RtpSctpSender->timer_id = g_timeout_add (3000, onesecond_timer, RtpSctpSender);
+   RtpSctpSender->timer_id = g_timeout_add (3000, stats_timer, RtpSctpSender);
 }
 
 static void
@@ -464,11 +471,26 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
 
 
 
-static gboolean
-onesecond_timer (gpointer priv)
+static gboolean stats_timer (gpointer priv)
 {
    _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
    /* GstElement *sctpsink = gst_bin_get_by_name (GST_BIN (RtpSctpSender->pipeline), "sink"); */
+
+   gint bitrate;
+   g_object_get(G_OBJECT(RtpSctpSender->encoder), "bitrate", &bitrate, NULL);
+   GST_INFO_OBJECT(RtpSctpSender->pipeline, "Encoder bitrate %4u kbit/s", bitrate);
+
+   guint lvl_buf, lvl_byte;
+   guint64 lvl_time;
+   gint64 avg_in;
+   g_object_get(G_OBJECT(RtpSctpSender->queue),
+         "current-level-buffers", &lvl_buf,
+         "current-level-bytes", &lvl_byte,
+         "current-level-time", &lvl_time,
+         "avg-in-rate", &avg_in,
+         NULL);
+   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: current #%3u, %3ukB, %luns, avg: %ld kbit/s",
+         lvl_buf, (lvl_byte >> 10), lvl_time, (avg_in >> 7));
 
    struct sctpstat *stats = NULL;
    g_object_get(G_OBJECT(RtpSctpSender->sctpsink), "usrsctp-stats", &stats, NULL);
@@ -485,16 +507,6 @@ onesecond_timer (gpointer priv)
          stats->sctps_ecnereducedcwnd,     /* Number of times a ECN reduced the cwnd */
          stats->sctps_primary_randry      /* Number of times the sender ran dry of user data on primary */
          );
-
-   guint lvl_buf, lvl_byte;
-   guint64 lvl_time;
-   g_object_get(G_OBJECT(RtpSctpSender->queue),
-         "current-level-buffers", &lvl_buf,
-         "current-level-bytes", &lvl_byte,
-         "current-level-time", &lvl_time,
-         NULL);
-   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: current #%3u, %3ukB, %luns",
-         lvl_buf, (lvl_byte >> 10), lvl_time);
 
    return TRUE;
 }

@@ -64,7 +64,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL  9988
 #define SCTP_DEFAULT_UDP_ENCAPS             FALSE
 
-#define SCTP_PPID       33
+#define SCTP_PPID       99
 #define SCTP_SID        1
 #define SCTP_ASSOC_ID   1
 
