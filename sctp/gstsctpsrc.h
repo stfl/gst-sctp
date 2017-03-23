@@ -34,8 +34,7 @@ G_BEGIN_DECLS
 typedef struct _GstSctpSrc GstSctpSrc;
 typedef struct _GstSctpSrcClass GstSctpSrcClass;
 
-struct _GstSctpSrc
-{
+struct _GstSctpSrc {
   GstBaseSrc base_sctpsrc;
 
   /* properties */
@@ -59,13 +58,23 @@ struct _GstSctpSrc
   gint       skip_first_bytes;
   gboolean   close_socket;
   /* gboolean   retrieve_sender_address; */
+
+  guint64     pushed;
+
+  // FIXME define as paramater
+  struct sockaddr *laddrs;      // array of local sockaddr
+  struct sockaddr *paddrs;      // array of peer sockaddr
+
 };
 
-struct _GstSctpSrcClass
-{
+struct _GstSctpSrcClass {
   /* GstBaseSrcClass base_sctpsrc_class; */
   GstPushSrcClass parent_class;
 };
+
+typedef struct _SctpSrcStats {
+   guint32     pushed;
+} SctpSrcStats;
 
 GType gst_sctpsrc_get_type (void);
 

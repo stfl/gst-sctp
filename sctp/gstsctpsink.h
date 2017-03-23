@@ -51,6 +51,8 @@ struct _GstSctpSink
   gint      udp_encaps_port_local;
   gint      udp_encaps_port_remote;
 
+  struct sockaddr *addrs;
+
   struct socket *sock;
   /* our sockets */
   /* GSocket   *used_socket; */
@@ -71,12 +73,19 @@ struct _GstSctpSink
   /* GInputVector vec[2]; */
 
   /* gchar     *uri; */
+
+   guint stats_timer_id;
 };
 
 struct _GstSctpSinkClass
 {
   GstBaseSinkClass base_sctpsink_class;
 };
+
+typedef struct _SctpSinkStats {
+   guint32     received;
+} SctpSinkStats;
+
 
 GType gst_sctpsink_get_type (void);
 

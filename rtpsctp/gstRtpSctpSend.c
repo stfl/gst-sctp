@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <glib.h>
 
+#include <usrsctp.h>
+
 #define GETTEXT_PACKAGE "RtpSctpSender"
 
 
@@ -40,6 +42,8 @@ struct __GstRtpSctpSender
 
    GstElement *source_element;
    GstElement *sink_element;
+   GstElement *sctpsink;
+   GstElement *queue;
 
    gboolean paused_for_buffering;
    guint timer_id;
@@ -83,19 +87,7 @@ main (int argc, char *argv[])
    g_option_context_free (context);
 
    RtpSctpSender = gst_RtpSctpSender_new ();
-
-   /* if (argc > 1) { */
-   /*    gchar *uri; */
-   /*    if (gst_uri_is_valid (argv[1])) { */
-   /*       uri = g_strdup (argv[1]); */
-   /*    } else { */
-   /*       uri = g_filename_to_uri (argv[1], NULL, NULL); */
-   /*    } */
-   /*    gst_RtpSctpSender_create_pipeline_playbin (RtpSctpSender, uri); */
-   /*    g_free (uri); */
-   /* } else { */
       gst_RtpSctpSender_create_pipeline (RtpSctpSender);
-   /* } */
 
    gst_RtpSctpSender_start (RtpSctpSender);
 
@@ -128,6 +120,14 @@ gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
       gst_object_unref (RtpSctpSender->sink_element);
       RtpSctpSender->sink_element = NULL;
    }
+   if (RtpSctpSender->sctpsink) {
+      gst_object_unref (RtpSctpSender->sctpsink);
+      RtpSctpSender->sctpsink = NULL;
+   }
+   if (RtpSctpSender->queue) {
+      gst_object_unref (RtpSctpSender->queue);
+      RtpSctpSender->queue = NULL;
+   }
 
    if (RtpSctpSender->pipeline) {
       gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
@@ -158,8 +158,9 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
          NULL);
    gst_util_set_object_arg(G_OBJECT(source), "pattern", "snow");
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
-         "width", G_TYPE_INT, 1280,
-         "height", G_TYPE_INT, 720,
+         "format", G_TYPE_STRING, "I420",
+         "width", G_TYPE_INT, 800,
+         "height", G_TYPE_INT, 600,
          "framerate", GST_TYPE_FRACTION, 25, 1,
          NULL);
 
@@ -189,6 +190,12 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 /* a-framerate=(string)25 */
          /* NULL); */
 
+   GstElement *queue = gst_element_factory_make("queue", "queue");
+   if (!queue) {
+      g_print ("Failed to create element of type 'queue'\n");
+      /* return -1; */
+   }
+
    sink = gst_element_factory_make("sctpsink", "sink");
    if (!sink) {
       g_print ("Failed to create element of type 'sctpsink'\n");
@@ -201,7 +208,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
          NULL);
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, encoder, rtppay, sink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, encoder, rtppay, queue, sink, NULL);
 
    /* link */
    if (!gst_element_link_filtered(source, encoder, src_caps)) {
@@ -209,8 +216,16 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    }
    gst_caps_unref(src_caps);
 
-   if (!gst_element_link_many (encoder, rtppay, sink, NULL)) {
-      g_warning ("Failed to link elements!");
+   if (!gst_element_link(encoder, rtppay)) {
+      g_warning ("Failed to link filterd encoder and rtppay!\n");
+   }
+
+   if (!gst_element_link(rtppay, queue)) {
+      g_warning ("Failed to link filterd rtppay and queue!\n");
+   }
+
+   if (!gst_element_link(queue, sink)) {
+      g_critical ("Failed to link queue and sink'\n");
    }
 
 
@@ -221,11 +236,11 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    gst_bus_add_watch (RtpSctpSender->bus, gst_RtpSctpSender_handle_message,
          RtpSctpSender);
 
-   /* TODO: add stome other props here */
-   RtpSctpSender->source_element =
-      gst_bin_get_by_name (GST_BIN (pipeline), "source");
-   RtpSctpSender->sink_element =
-      gst_bin_get_by_name (GST_BIN (pipeline), "sink");
+   RtpSctpSender->source_element = gst_bin_get_by_name (GST_BIN (pipeline), "source");
+   RtpSctpSender->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "sink");
+
+   RtpSctpSender->sctpsink = sink;
+   RtpSctpSender->queue = queue;
 }
 
 void
@@ -233,7 +248,6 @@ gst_RtpSctpSender_start (_GstRtpSctpSender * RtpSctpSender)
 {
    gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_READY);
 
-   RtpSctpSender->timer_id = g_timeout_add (1000, onesecond_timer, RtpSctpSender);
 }
 
 void
@@ -293,7 +307,7 @@ static void
 gst_RtpSctpSender_handle_paused_to_playing (_GstRtpSctpSender *
       RtpSctpSender)
 {
-
+   RtpSctpSender->timer_id = g_timeout_add (3000, onesecond_timer, RtpSctpSender);
 }
 
 static void
@@ -453,9 +467,34 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
 static gboolean
 onesecond_timer (gpointer priv)
 {
-   //_GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
+   _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
+   /* GstElement *sctpsink = gst_bin_get_by_name (GST_BIN (RtpSctpSender->pipeline), "sink"); */
 
-   g_print (".\n");
+   struct sctpstat *stats = NULL;
+   g_object_get(G_OBJECT(RtpSctpSender->sctpsink), "usrsctp-stats", &stats, NULL);
+   GST_INFO_OBJECT(RtpSctpSender->pipeline, "usrsctp STATS: rdata %4u, sdata %6u, rtxdata %3u, "
+         "frtx %3u, hb %2u, todata %2u drpchklmt %u, drprwnd %u, ecncwnd %u, randry %u",
+         stats->sctps_recvdata,            /* total input DATA chunks    */
+         stats->sctps_senddata,            /* total output DATA chunks   */
+         stats->sctps_sendretransdata,     /* total output retransmitted DATA chunks */
+         stats->sctps_sendfastretrans,     /* total output fast retransmitted DATA chunks */
+         stats->sctps_sendheartbeat,       /* total output HB chunks     */
+         stats->sctps_timodata,            /* Number of T3 data time outs */
+         stats->sctps_datadropchklmt,      /* Number of in data drops due to chunk limit reached */
+         stats->sctps_datadroprwnd,        /* Number of in data drops due to rwnd limit reached */
+         stats->sctps_ecnereducedcwnd,     /* Number of times a ECN reduced the cwnd */
+         stats->sctps_primary_randry      /* Number of times the sender ran dry of user data on primary */
+         );
+
+   guint lvl_buf, lvl_byte;
+   guint64 lvl_time;
+   g_object_get(G_OBJECT(RtpSctpSender->queue),
+         "current-level-buffers", &lvl_buf,
+         "current-level-bytes", &lvl_byte,
+         "current-level-time", &lvl_time,
+         NULL);
+   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: current #%3u, %3ukB, %luns",
+         lvl_buf, (lvl_byte >> 10), lvl_time);
 
    return TRUE;
 }

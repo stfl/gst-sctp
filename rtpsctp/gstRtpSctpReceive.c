@@ -28,6 +28,8 @@
 #include <stdlib.h>
 #include <glib.h>
 
+#include <usrsctp.h>
+
 #define GETTEXT_PACKAGE "RtpSctpReceiver"
 
 
@@ -40,6 +42,9 @@ struct _GstRtpSctpReceiver
 
    GstElement *source_element;
    GstElement *sink_element;
+
+   GstElement *jitterbuffer;
+   GstElement *sctpsrc;
 
    gboolean paused_for_buffering;
    guint timer_id;
@@ -117,6 +122,10 @@ gst_RtpSctpReceiver_free (GstRtpSctpReceiver * RtpSctpReceiver)
       gst_object_unref (RtpSctpReceiver->sink_element);
       RtpSctpReceiver->sink_element = NULL;
    }
+   if (RtpSctpReceiver->jitterbuffer) {
+      gst_object_unref (RtpSctpReceiver->jitterbuffer);
+      RtpSctpReceiver->jitterbuffer = NULL;
+   }
 
    if (RtpSctpReceiver->pipeline) {
       gst_element_set_state (RtpSctpReceiver->pipeline, GST_STATE_NULL);
@@ -164,8 +173,8 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    }
    g_object_set(G_OBJECT(jitterbuffer),
          "latency", 100,
-         "max-dropout-time", 300,
-         "max-misorder-time", 200, // ms
+         "max-dropout-time", 100,
+         "max-misorder-time", 100, // ms
          NULL );
 
    GstElement *decoder = gst_element_factory_make("avdec_h264", "decoder");
@@ -197,7 +206,8 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    }
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, decoder, videoconvert, videosink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, decoder, videoconvert,
+         videosink, NULL);
 
    /* link */
  /* rtpdepay, decoder, */
@@ -226,13 +236,17 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 
    RtpSctpReceiver->pipeline = pipeline;
 
-
    gst_pipeline_set_auto_flush_bus (GST_PIPELINE (pipeline), FALSE);
    RtpSctpReceiver->bus = gst_pipeline_get_bus (GST_PIPELINE (pipeline));
    gst_bus_add_watch (RtpSctpReceiver->bus, gst_RtpSctpReceiver_handle_message, RtpSctpReceiver);
 
    RtpSctpReceiver->source_element = gst_bin_get_by_name (GST_BIN (pipeline), "source");
+   /* RtpSctpReceiver->source_element = source; */
    RtpSctpReceiver->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "videosink");
+   /* RtpSctpReceiver->sink_element = videosink; */
+
+   RtpSctpReceiver->jitterbuffer = jitterbuffer;
+   RtpSctpReceiver->sctpsrc = source;
 }
 
 void
@@ -460,7 +474,7 @@ gst_RtpSctpReceiver_handle_message (GstBus * bus, GstMessage * message,
 static gboolean
 onesecond_timer (gpointer priv)
 {
-   GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
+   /* GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv; */
 
    /* g_print (".\n"); */
 
@@ -471,24 +485,46 @@ static gboolean
 stats_timer (gpointer priv)
 {
    GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
-   GstElement *jbuf = gst_bin_get_by_name (GST_BIN (RtpSctpReceiver->pipeline), "jitterbuffer");
+   GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
 
    guint64 num_pushed, num_lost, num_late, num_duplicate=0;
-   GstStructure *stats;
-   g_object_get(G_OBJECT(jbuf), "stats", &stats, NULL);
-   if (! gst_structure_get (stats,
+   gdouble avg_jitter;
+   GstStructure *jbuf_stats;
+   g_object_get(G_OBJECT(jbuf), "stats", &jbuf_stats, NULL);
+   if ( ! gst_structure_get (jbuf_stats,
             "num-pushed",     G_TYPE_UINT64, &num_pushed,
             "num-lost",       G_TYPE_UINT64, &num_lost,
             "num-late",       G_TYPE_UINT64, &num_late,
             "num-duplicates", G_TYPE_UINT64, &num_duplicate,
+            "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
             NULL)) {
       g_error("error getting the jitterbuffer stats");
    }
-   g_print("Jitterbuffer STATS num-pushed: %8lu, num-lost: %6lu, num-late: %6lu, num-duplicates: %6lu\n",
-         num_pushed, num_lost, num_late, num_duplicate);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Jbuffer STATS: ~jitter: %f #pushed: %8lu, #lost: %3lu, #late: %4lu, #dupl: %3lu",
+         avg_jitter, num_pushed, num_lost, num_late, num_duplicate);
 
-   // FIXME free(stats);
-   /* gst_structure_unref(stats); */
+   // FIXME somehow free(stats);
+
+   struct sctpstat *usrsctp_stats = NULL;
+   g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "usrsctp-stats", &usrsctp_stats, NULL);
+
+   /* GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "usrsctp STATS: rdata %f, sdata %6u, " */
+   /*       "hb %2u, todata %2u drpchklmt %u, randry %u", */
+   /*       (double)usrsctp_stats->sctps_recvdata,            [> total input DATA chunks    <] */
+   /*       usrsctp_stats->sctps_senddata,            [> total output DATA chunks   <] */
+   /*       usrsctp_stats->sctps_sendheartbeat,       [> total output HB chunks     <] */
+   /*       usrsctp_stats->sctps_timodata,            [> Number of T3 data time outs <] */
+   /*       usrsctp_stats->sctps_datadropchklmt,      [> Number of in data drops due to chunk limit reached <] */
+   /*       usrsctp_stats->sctps_primary_randry      [> Number of times the sender ran dry of user data on primary <] */
+   /*       ); */
+
+   guint64 pushed;
+   g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "pushed", &pushed, NULL);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "pushed %lu rdata %u %0.2f, drp %u",
+         pushed, usrsctp_stats->sctps_recvdata,
+         (gdouble)pushed/(usrsctp_stats->sctps_recvdata),
+         usrsctp_stats->sctps_pdrpmbda
+         );
 
    return TRUE;
 }

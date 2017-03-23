@@ -74,15 +74,15 @@ static void gst_sctpsrc_finalize(GObject *object);
 
 /* static GstCaps *gst_sctpsrc_get_caps (GstBaseSrc * src, GstCaps * filter); */
 /* static gboolean gst_sctpsrc_negotiate (GstBaseSrc * src); */
-static GstCaps *gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps);
+/* static GstCaps *gst_sctpsrc_fixate (GstBaseSrc * src, GstCaps * caps); */
 static gboolean gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps);
-static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query);
+/* static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query); */
 static gboolean gst_sctpsrc_start(GstBaseSrc *src);
 static gboolean gst_sctpsrc_stop(GstBaseSrc *src);
 /* static void gst_sctpsrc_get_times (GstBaseSrc * src, GstBuffer * buffer,
  * GstClockTime * start,
  * GstClockTime * end); */
-static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size);
+/* static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size); */
 /* static gboolean gst_sctpsrc_is_seekable (GstBaseSrc * src); */
 /* static gboolean gst_sctpsrc_prepare_seek_segment (GstBaseSrc * src, GstEvent
  * * seek, GstSegment *
@@ -92,15 +92,15 @@ static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size);
 /* static gboolean gst_sctpsrc_unlock (GstBaseSrc * src); */
 /* static gboolean gst_sctpsrc_unlock_stop (GstBaseSrc * src); */
 /* static gboolean gst_sctpsrc_query (GstBaseSrc * src, GstQuery * query); */
-static gboolean gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event);
+/* static gboolean gst_sctpsrc_event (GstBaseSrc * src, GstEvent * event); */
 
 static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf);
 /* static GstFlowReturn gst_sctpsrc_alloc (GstPushSrc * src, GstBuffer ** buf);
 */
 /* static GstFlowReturn gst_sctpsrc_fill (GstPushSrc * src, GstBuffer * buf); */
 
-static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
-                              size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info);
+/* static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
+ *                               size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info); */
 
 static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer);
 
@@ -112,6 +112,9 @@ enum {
    PROP_UDP_ENCAPS,
    PROP_UDP_ENCAPS_PORT_LOCAL,
    PROP_UDP_ENCAPS_PORT_REMOTE,
+   PROP_USRSCTP_STATS,
+   /* PROP_STATS, */
+   PROP_PUSHED,
    /* FILL ME */
 };
 
@@ -191,6 +194,18 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
        g_param_spec_int("udp-encaps-port-remote", "remote UDP encapuslation port",
                         "The remote port used with UDP encapsulate", 0, 65535,
                         SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE, G_PARAM_READWRITE));
+   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_USRSCTP_STATS,
+         g_param_spec_pointer ("usrsctp-stats",  "usrsctp stats",
+            "Stats (struct sctpstat *) provided by libusrsctp",
+            G_PARAM_READABLE));
+   /* g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_STATS,
+    *       g_param_spec_pointer ("stats",  "stats",
+    *          "Stats (struct sctpsrc *)",
+    *          G_PARAM_READABLE)); */
+   g_object_class_install_property(
+       G_OBJECT_CLASS(klass), PROP_PUSHED,
+       g_param_spec_uint64("pushed", "packets pushed", "Packets pushed to next element",
+          0, G_MAXUINT64, 0, G_PARAM_READABLE));
 }
 
 static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
@@ -200,6 +215,7 @@ static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
    sctpsrc->udp_encaps             = SCTP_DEFAULT_UDP_ENCAPS;
    sctpsrc->udp_encaps_port_local  = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
    sctpsrc->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
+   sctpsrc->pushed                 = 0;
 }
 
 void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -261,6 +277,14 @@ void gst_sctpsrc_get_property(GObject *object, guint property_id, GValue *value,
    case PROP_UDP_ENCAPS_PORT_LOCAL:
       g_value_set_int(value, sctpsrc->udp_encaps_port_local);
       break;
+   case PROP_PUSHED:
+      g_value_set_uint64(value, sctpsrc->pushed);
+      break;
+   case PROP_USRSCTP_STATS: {
+      struct sctpstat stats;
+      usrsctp_get_stat(&stats);
+      g_value_set_pointer (value, (gpointer *)&stats);
+      break; }
 
    default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -337,13 +361,13 @@ static gboolean gst_sctpsrc_set_caps (GstBaseSrc * src, GstCaps * caps) {
 }
 
 /* setup allocation query */
-static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-  GST_DEBUG_OBJECT (sctpsrc, "decide_allocation");
-
-  return GST_BASE_SRC_CLASS(gst_sctpsrc_parent_class)->decide_allocation(src, query);
-}
+/* static gboolean gst_sctpsrc_decide_allocation (GstBaseSrc * src, GstQuery * query)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *   GST_DEBUG_OBJECT (sctpsrc, "decide_allocation");
+ *
+ *   return GST_BASE_SRC_CLASS(gst_sctpsrc_parent_class)->decide_allocation(src, query);
+ * } */
 
 /* start and stop processing, ideal for opening/closing the resource */
 static gboolean gst_sctpsrc_start(GstBaseSrc *src)
@@ -352,8 +376,6 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 
    struct sockaddr_in6 addr;
    struct sctp_udpencaps encaps;
-   struct sctp_event event;
-   unsigned int i;
    struct sctp_assoc_value av;
    const int on = 1;
    /* ssize_t n; */
@@ -412,16 +434,17 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    }
 
    /* subscribe to the given events in event_types[] */
-   uint16_t event_types[] = {SCTP_ASSOC_CHANGE,          
-                             SCTP_PEER_ADDR_CHANGE,
-                             SCTP_REMOTE_ERROR,          
-                             SCTP_SHUTDOWN_EVENT,
-                             SCTP_ADAPTATION_INDICATION, 
-                             SCTP_PARTIAL_DELIVERY_EVENT};
-   memset(&event, 0, sizeof(event));
-   event.se_assoc_id = SCTP_FUTURE_ASSOC;
-   event.se_on       = 1;
-   /* for (i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
+   /* struct sctp_event event;
+    * uint16_t event_types[] = {SCTP_ASSOC_CHANGE,
+    *                           SCTP_PEER_ADDR_CHANGE,
+    *                           SCTP_REMOTE_ERROR,
+    *                           SCTP_SHUTDOWN_EVENT,
+    *                           SCTP_ADAPTATION_INDICATION,
+    *                           SCTP_PARTIAL_DELIVERY_EVENT};
+    * memset(&event, 0, sizeof(event));
+    * event.se_assoc_id = SCTP_FUTURE_ASSOC;
+    * event.se_on       = 1;
+    * for (int i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
     *    event.se_type = event_types[i];
     *    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
     *                           sizeof(struct sctp_event)) < 0) {
@@ -466,15 +489,13 @@ static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
 }
 
 /* get the total size of the resource in bytes */
-static gboolean
-gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
-{
-  GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
-  GST_DEBUG_OBJECT (sctpsrc, "get_size");
-
-
-  return TRUE;
-}
+/* static gboolean gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
+ * {
+ *   GstSctpSrc *sctpsrc = GST_SCTPSRC (src);
+ *   GST_DEBUG_OBJECT (sctpsrc, "get_size");
+ *
+ *   return TRUE;
+ * } */
 
 /* check if the resource is seekable */
 /* static gboolean
@@ -521,12 +542,12 @@ gst_sctpsrc_get_size (GstBaseSrc * src, guint64 * size)
  * } */
 
 /* notify subclasses of an event */
-static gboolean gst_sctpsrc_event(GstBaseSrc *src, GstEvent *event) {
-   GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
-   GST_DEBUG_OBJECT(sctpsrc, "event: %s", gst_event_type_get_name (event->type));
-
-   return gst_pad_event_default(src->srcpad, GST_OBJECT(src), event);
-}
+/* static gboolean gst_sctpsrc_event(GstBaseSrc *src, GstEvent *event) {
+ *    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
+ *    GST_DEBUG_OBJECT(sctpsrc, "event: %s", gst_event_type_get_name (event->type));
+ *
+ *    return gst_pad_event_default(src->srcpad, GST_OBJECT(src), event);
+ * } */
 
 /* ask the subclass to create a buffer with offset and size, the default
  * implementation will call alloc and fill. */
@@ -598,6 +619,8 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
    /* gst_buffer_unmap(*buf, &map); */
 
    *buf = GST_BUFFER_CAST(outbuf);
+   sctpsrc->pushed++;
+
 
    /* *buf = buffer; */
    return GST_FLOW_OK;
@@ -624,65 +647,65 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
  *   return GST_FLOW_OK;
  * } */
 
-static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
-                              size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info) {
-   char namebuf[INET6_ADDRSTRLEN];
-   const char *name;
-   uint16_t port;
-
-   if (data) {
-      if (flags & MSG_NOTIFICATION) {
-         GST_INFO("Notification of length %d received.", (int)datalen);
-      } else {
-         switch (addr.sa.sa_family) {
-#ifdef INET
-         case AF_INET:
-            name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
-            port = ntohs(addr.sin.sin_port);
-            break;
-#endif
-#ifdef INET6
-         case AF_INET6:
-            name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
-            port = ntohs(addr.sin6.sin6_port);
-            break;
-#endif
-         case AF_CONN:
-            snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
-            name = namebuf;
-            port = ntohs(addr.sconn.sconn_port);
-            break;
-         default:
-            name = NULL;
-            port = 0;
-            break;
-         }
-         GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u "
-                  "and TSN %u, PPID "
-                  "%u, context %u.",
-                  (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn,
-                  ntohl(rcv.rcv_ppid), rcv.rcv_context);
-         if (flags & MSG_EOR) {
-            struct sctp_sndinfo snd_info;
-
-            snd_info.snd_sid   = rcv.rcv_sid;
-            snd_info.snd_flags = 0;
-            if (rcv.rcv_flags & SCTP_UNORDERED) {
-               snd_info.snd_flags |= SCTP_UNORDERED;
-            }
-            snd_info.snd_ppid     = rcv.rcv_ppid;
-            snd_info.snd_context  = 0;
-            snd_info.snd_assoc_id = rcv.rcv_assoc_id;
-            if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
-                              SCTP_SENDV_SNDINFO, 0) < 0) {
-               GST_ERROR("sctp_sendv");
-            }
-         }
-      }
-      free(data);
-   }
-   return (1);
-}
+/* static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
+ *                               size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info) {
+ *    char namebuf[INET6_ADDRSTRLEN];
+ *    const char *name;
+ *    uint16_t port;
+ *
+ *    if (data) {
+ *       if (flags & MSG_NOTIFICATION) {
+ *          GST_INFO("Notification of length %d received.", (int)datalen);
+ *       } else {
+ *          switch (addr.sa.sa_family) {
+ * #ifdef INET
+ *          case AF_INET:
+ *             name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
+ *             port = ntohs(addr.sin.sin_port);
+ *             break;
+ * #endif
+ * #ifdef INET6
+ *          case AF_INET6:
+ *             name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
+ *             port = ntohs(addr.sin6.sin6_port);
+ *             break;
+ * #endif
+ *          case AF_CONN:
+ *             snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
+ *             name = namebuf;
+ *             port = ntohs(addr.sconn.sconn_port);
+ *             break;
+ *          default:
+ *             name = NULL;
+ *             port = 0;
+ *             break;
+ *          }
+ *          GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u "
+ *                   "and TSN %u, PPID "
+ *                   "%u, context %u.",
+ *                   (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn,
+ *                   ntohl(rcv.rcv_ppid), rcv.rcv_context);
+ *          if (flags & MSG_EOR) {
+ *             struct sctp_sndinfo snd_info;
+ *
+ *             snd_info.snd_sid   = rcv.rcv_sid;
+ *             snd_info.snd_flags = 0;
+ *             if (rcv.rcv_flags & SCTP_UNORDERED) {
+ *                snd_info.snd_flags |= SCTP_UNORDERED;
+ *             }
+ *             snd_info.snd_ppid     = rcv.rcv_ppid;
+ *             snd_info.snd_context  = 0;
+ *             snd_info.snd_assoc_id = rcv.rcv_assoc_id;
+ *             if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
+ *                               SCTP_SENDV_SNDINFO, 0) < 0) {
+ *                GST_ERROR("sctp_sendv");
+ *             }
+ *          }
+ *       }
+ *       free(data);
+ *    }
+ *    return (1);
+ * } */
 
 static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer) {
    RTPHeader *rtph = (RTPHeader *)buffer;

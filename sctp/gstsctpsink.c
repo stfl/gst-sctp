@@ -50,6 +50,8 @@
 #include <arpa/inet.h>
 #include <usrsctp.h>
 
+#include <netdb.h>
+
 int done = 0;
 
 GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
@@ -75,6 +77,7 @@ enum
    PROP_UDP_ENCAPS,
    PROP_UDP_ENCAPS_PORT_REMOTE,
    PROP_UDP_ENCAPS_PORT_LOCAL,
+   PROP_USRSCTP_STATS,
    /* FILL ME */
 };
 
@@ -99,14 +102,15 @@ static gboolean gst_sctpsink_query (GstBaseSink * sink, GstQuery * query);
 /* static GstFlowReturn gst_sctpsink_prepare_list (GstBaseSink * sink, GstBufferList * buffer_list); */
 /* static GstFlowReturn gst_sctpsink_preroll (GstBaseSink * sink, GstBuffer * buffer); */
 static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer);
-static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list);
+/* static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list); */
 
-static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data);
-static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data);
-static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data);
+/* static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data); */
+/* static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data); */
+/* static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data); */
 
 static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer);
 static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str);
+static gboolean stats_timer (gpointer priv);
 
 /* usrsctp functions */
 
@@ -190,6 +194,10 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
             "The local (source) port used with UDP encapsulate",
             0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL,
             G_PARAM_READWRITE));
+   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_USRSCTP_STATS,
+         g_param_spec_pointer ("usrsctp-stats",  "usrsctp stats",
+            "Stats (struct sctpstat *) provided by libusrsctp",
+            G_PARAM_READABLE));
 
    gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
          "SCTP Sink", "Sink/Network",
@@ -229,6 +237,10 @@ gst_sctpsink_set_property (GObject * object, guint property_id,
          sctpsink->port = g_value_get_int (value);
          GST_DEBUG_OBJECT(sctpsink, "set port:%d", sctpsink->port);
          break;
+      case PROP_SRC_PORT:
+         sctpsink->src_port = g_value_get_int (value);
+         GST_DEBUG_OBJECT(sctpsink, "set src port:%d", sctpsink->src_port);
+         break;
       case PROP_UDP_ENCAPS:
          sctpsink->udp_encaps = g_value_get_boolean (value);
          GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation:%s", sctpsink->udp_encaps ? "TRUE" : "FALSE");
@@ -253,7 +265,7 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
-   /* GST_DEBUG_OBJECT (sctpsink, "get_property"); */
+   GST_DEBUG_OBJECT (sctpsink, "get_property");
 
    switch (property_id) {
       case PROP_HOST:
@@ -274,8 +286,11 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
       case PROP_UDP_ENCAPS_PORT_LOCAL:
          g_value_set_int (value, sctpsink->udp_encaps_port_local);
          break;
-         // FIXME add usrsctp stats struct as ro property!
-
+      case PROP_USRSCTP_STATS: {
+         struct sctpstat stats;
+         usrsctp_get_stat(&stats);
+         g_value_set_pointer (value, (gpointer *)&stats);
+         break; }
       default:
          G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
          break;
@@ -416,14 +431,14 @@ gst_sctpsink_start (GstBaseSink * sink)
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
    /* struct socket *sock; */
-   struct sockaddr *addr, *addrs;
+   struct sockaddr *addrs;
    struct sockaddr_in addr4;
    struct sockaddr_in6 addr6;
    /* struct sctp_udpencaps encaps; */
    /* char buffer[80]; */
-   int i, n;
+   int n;
 
-   GString *addr_string, *addr2_string;
+   GString *addr_string;
 
    /* if (argc > 4) { */
    /*    usrsctp_init(atoi(argv[4]), NULL, usrsctp_debug_printf); */
@@ -507,6 +522,8 @@ gst_sctpsink_start (GstBaseSink * sink)
       g_string_free(addr_string, TRUE);
       usrsctp_freepaddrs(addrs);
    }
+
+   sctpsink->stats_timer_id = g_timeout_add (3000, stats_timer, sctpsink);
    return TRUE;
 }
 
@@ -653,7 +670,6 @@ gst_sctpsink_query (GstBaseSink * sink, GstQuery * query)
  * been set to sync to the clock. */
 static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer) {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
-   int n;
 
    GstMapInfo map;
    gst_buffer_map (buffer, &map, GST_MAP_READ);
@@ -682,69 +698,69 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
 }
 
 /** Render a BufferList */
-static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list) {
+/* static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list) { */
    /* GstSctpSink *sctpsink = GST_SCTPSINK (sink); */
-
-   GstBuffer *buf;
-   guint size = 0;
-
-   gst_buffer_list_foreach (buffer_list, buffer_list_calc_size, &size);
-   GST_LOG_OBJECT (sink, "total size of buffer list %p: %u", buffer_list, size);
-
+/*  */
+/*    GstBuffer *buf; */
+/*    guint size = 0; */
+/*  */
+/*    gst_buffer_list_foreach (buffer_list, buffer_list_calc_size, &size); */
+/*    GST_LOG_OBJECT (sink, "total size of buffer list %p: %u", buffer_list, size); */
+/*  */
    /* copy all buffers in the list into one single buffer, so we can use
     * the normal render function (FIXME: optimise to avoid the memcpy) */
-   buf = gst_buffer_new ();
-   gst_buffer_list_foreach (buffer_list, buffer_list_copy_data, buf);
-   g_assert (gst_buffer_get_size (buf) == size);
+/*    buf = gst_buffer_new (); */
+/*    gst_buffer_list_foreach (buffer_list, buffer_list_copy_data, buf); */
+/*    g_assert (gst_buffer_get_size (buf) == size); */
+/*  */
+/*    gst_sctpsink_render (sink, buf); */
+/*    gst_buffer_unref (buf); */
+/*  */
+/*    return GST_FLOW_OK; */
+/* } */
 
-   gst_sctpsink_render (sink, buf);
-   gst_buffer_unref (buf);
+/* static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data) {
+ *   guint *p_size = data;
+ *   gsize buf_size;
+ *
+ *   buf_size = gst_buffer_get_size (*buf);
+ *   GST_TRACE ("buffer %u has size %" G_GSIZE_FORMAT, idx, buf_size);
+ *   *p_size += buf_size;
+ *
+ *   return TRUE;
+ * } */
 
-   return GST_FLOW_OK;
-}
+/* static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data) {
+ *   GstBuffer *dest = data;
+ *   guint num, i;
+ *
+ *   if (idx == 0)
+ *     gst_buffer_copy_into (dest, *buf, GST_BUFFER_COPY_METADATA, 0, -1);
+ *
+ *   num = gst_buffer_n_memory (*buf);
+ *   for (i = 0; i < num; ++i) {
+ *     GstMemory *mem;
+ *
+ *     mem = gst_buffer_get_memory (*buf, i);
+ *     gst_buffer_append_memory (dest, mem);
+ *   }
+ *
+ *   return TRUE;
+ * } */
 
-static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data) {
-  guint *p_size = data;
-  gsize buf_size;
-
-  buf_size = gst_buffer_get_size (*buf);
-  GST_TRACE ("buffer %u has size %" G_GSIZE_FORMAT, idx, buf_size);
-  *p_size += buf_size;
-
-  return TRUE;
-}
-
-static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data) {
-  GstBuffer *dest = data;
-  guint num, i;
-
-  if (idx == 0)
-    gst_buffer_copy_into (dest, *buf, GST_BUFFER_COPY_METADATA, 0, -1);
-
-  num = gst_buffer_n_memory (*buf);
-  for (i = 0; i < num; ++i) {
-    GstMemory *mem;
-
-    mem = gst_buffer_get_memory (*buf, i);
-    gst_buffer_append_memory (dest, mem);
-  }
-
-  return TRUE;
-}
-
-static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
-   GstSctpSink *sctpsink = GST_SCTPSINK(user_data);
-
-   GST_DEBUG_OBJECT(sctpsink, "iter through the list [%u]:%4lu", idx, gst_buffer_get_size(*buffer));
-   usrsctp_sendv(sctpsink->sock, buffer, gst_buffer_get_size(*buffer), NULL, 0, NULL, 0,
-         SCTP_SENDV_NOINFO, 0);
-   /* if (idx == 0) { */
-   /*    print_rtp_header(sctpsink, (unsigned char *)buffer+2); */
-   /* }  */
-   /* hexDump(NULL, buffer, MIN(gst_buffer_get_size(*buffer), 16)); */
-
-   return TRUE;
-}
+/* static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {
+ *    GstSctpSink *sctpsink = GST_SCTPSINK(user_data);
+ *
+ *    GST_DEBUG_OBJECT(sctpsink, "iter through the list [%u]:%4lu", idx, gst_buffer_get_size(*buffer));
+ *    usrsctp_sendv(sctpsink->sock, buffer, gst_buffer_get_size(*buffer), NULL, 0, NULL, 0,
+ *          SCTP_SENDV_NOINFO, 0);
+ *    [> if (idx == 0) { <]
+ *    [>    print_rtp_header(sctpsink, (unsigned char *)buffer+2); <]
+ *    [> }  <]
+ *    [> hexDump(NULL, buffer, MIN(gst_buffer_get_size(*buffer), 16)); <]
+ *
+ *    return TRUE;
+ * } */
 
 static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer) {
    RTPHeader *rtph = (RTPHeader *)buffer;
@@ -798,5 +814,162 @@ static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int 
    }
    return str->len;
 }
+
+static gboolean stats_timer (gpointer priv) {
+   GstSctpSink *sctpsink = (GstSctpSink *)priv;
+
+   socklen_t len;
+   /* struct sctp_paddrinfo addrinfo = {
+    *    .spinfo_assoc_id = SCTP_ASSOC_ID
+    * };
+    * len = (socklen_t)sizeof(struct sctp_paddrinfo);
+    * if (usrsctp_getsockopt(sctpsink->sock,
+    *          IPPROTO_SCTP,
+    *          SCTP_GET_PEER_ADDR_INFO,
+    *          &addrinfo,
+    *          &len) < 0) {
+    *    GST_ERROR_OBJECT(sctpsink, "error getting peer addr info: %s", strerror(errno));
+    * } */
+
+   /* GST_INFO_OBJECT(sctpsink,"returned length: %u", addrinfo_len); */
+
+   struct sctp_status status;
+   len = (socklen_t)sizeof(struct sctp_status);
+   if (usrsctp_getsockopt(sctpsink->sock,
+            IPPROTO_SCTP,
+            SCTP_STATUS,
+            &status,
+            &len) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "getsockopt SCTP_STATUS: %s", strerror(errno));
+      return FALSE;
+   }
+
+   GST_INFO_OBJECT(sctpsink, "state %d, rwnd: %u, unack: %u, pend: %u, fragm: %u",
+         status.sstat_state,
+         status.sstat_rwnd,
+         status.sstat_unackdata,
+         status.sstat_penddata,
+         status.sstat_fragmentation_point );
+
+   char buffer[INET6_ADDRSTRLEN];
+   len = (socklen_t)sizeof(status.sstat_primary.spinfo_address);
+   if (getnameinfo((struct sockaddr*)&status.sstat_primary.spinfo_address, len, buffer,
+            sizeof(buffer), 0, 0, NI_NUMERICHOST) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "failed to fetch remote address (errno=%d)",errno);
+      return FALSE;
+   }
+   GST_INFO_OBJECT(sctpsink, "Primary: %s state %d, cwnd: %u, srtt: %ums, rto: %ums, mtu: %u",
+         buffer,
+         status.sstat_primary.spinfo_state,
+         status.sstat_primary.spinfo_cwnd,
+         status.sstat_primary.spinfo_srtt,
+         status.sstat_primary.spinfo_rto,
+         status.sstat_primary.spinfo_mtu );
+
+
+/* 8.1.2.  Association Parameters (SCTP_ASSOCINFO) */
+   // SO_SNDBUF
+
+   return TRUE;
+}
+
+/* static void usrsctp_print_status(struct peer_connection *pc)
+ * {
+ *    struct sctp_status status;
+ *    socklen_t len;
+ *    uint32_t i;
+ *    struct channel *channel;
+ *
+ *    len = (socklen_t)sizeof(struct sctp_status);
+ *    if (usrsctp_getsockopt(pc->sock, IPPROTO_SCTP, SCTP_STATUS, &status, &len) < 0) {
+ *       perror("getsockopt");
+ *       return;
+ *    }
+ *    printf("Association state: ");
+ *    switch (status.sstat_state) {
+ *    case SCTP_CLOSED:
+ *       printf("CLOSED\n");
+ *       break;
+ *    case SCTP_BOUND:
+ *       printf("BOUND\n");
+ *       break;
+ *    case SCTP_LISTEN:
+ *       printf("LISTEN\n");
+ *       break;
+ *    case SCTP_COOKIE_WAIT:
+ *       printf("COOKIE_WAIT\n");
+ *       break;
+ *    case SCTP_COOKIE_ECHOED:
+ *       printf("COOKIE_ECHOED\n");
+ *       break;
+ *    case SCTP_ESTABLISHED:
+ *       printf("ESTABLISHED\n");
+ *       break;
+ *    case SCTP_SHUTDOWN_PENDING:
+ *       printf("SHUTDOWN_PENDING\n");
+ *       break;
+ *    case SCTP_SHUTDOWN_SENT:
+ *       printf("SHUTDOWN_SENT\n");
+ *       break;
+ *    case SCTP_SHUTDOWN_RECEIVED:
+ *       printf("SHUTDOWN_RECEIVED\n");
+ *       break;
+ *    case SCTP_SHUTDOWN_ACK_SENT:
+ *       printf("SHUTDOWN_ACK_SENT\n");
+ *       break;
+ *    default:
+ *       printf("UNKNOWN\n");
+ *       break;
+ *    }
+ *    printf("Number of streams (i/o) = (%u/%u)\n",
+ *           status.sstat_instrms, status.sstat_outstrms);
+ *    for (i = 0; i < NUMBER_OF_CHANNELS; i++) {
+ *       channel = &(pc->channels[i]);
+ *       if (channel->state == DATA_CHANNEL_CLOSED) {
+ *          continue;
+ *       }
+ *       printf("Channel with id = %u: state ", channel->id);
+ *       switch (channel->state) {
+ *       case DATA_CHANNEL_CLOSED:
+ *          printf("CLOSED");
+ *          break;
+ *       case DATA_CHANNEL_CONNECTING:
+ *          printf("CONNECTING");
+ *          break;
+ *       case DATA_CHANNEL_OPEN:
+ *          printf("OPEN");
+ *          break;
+ *       case DATA_CHANNEL_CLOSING:
+ *          printf("CLOSING");
+ *          break;
+ *       default:
+ *          printf("UNKNOWN(%d)", channel->state);
+ *          break;
+ *       }
+ *       printf(", flags = 0x%08x, stream id (in/out): (%u/%u), ",
+ *              channel->flags,
+ *              channel->i_stream,
+ *              channel->o_stream);
+ *       if (channel->unordered) {
+ *          printf("unordered, ");
+ *       } else {
+ *          printf("ordered, ");
+ *       }
+ *       switch (channel->pr_policy) {
+ *       case SCTP_PR_SCTP_NONE:
+ *          printf("reliable.\n");
+ *          break;
+ *       case SCTP_PR_SCTP_TTL:
+ *          printf("unreliable (timeout %ums).\n", channel->pr_value);
+ *          break;
+ *       case SCTP_PR_SCTP_RTX:
+ *          printf("unreliable (max. %u rtx).\n", channel->pr_value);
+ *          break;
+ *       default:
+ *          printf("unkown policy %u.\n", channel->pr_policy);
+ *          break;
+ *       }
+ *    }
+ * } */
 
 // vim: ft=c
