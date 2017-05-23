@@ -476,7 +476,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
 {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
-   GST_DEBUG_OBJECT(sctpsrc, "stop");
+   /* GST_DEBUG_OBJECT(sctpsrc, "stop"); */
 
    //FIXME notify other side of termination!
 

@@ -363,8 +363,6 @@ usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, s
    const char *name;
    uint16_t port;
 
-   GST_ERROR("usrsctp_receive_cb");
-
    if (data) {
       if (flags & MSG_NOTIFICATION) {
          GST_DEBUG("Notification of length %d received.", (int)datalen);
@@ -415,9 +413,7 @@ usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, s
       }
       free(data);
    } else {
-      // FIXME handle this properly
-      // send the info upstream somehow....
-      GST_ERROR("received data NULL");
+      GST_INFO("received data NULL");
       usrsctp_close(sock);
    }
    return (1);
@@ -452,7 +448,7 @@ gst_sctpsink_start (GstBaseSink * sink)
 #endif
    usrsctp_sysctl_set_sctp_blackhole(2);
    if ((sctpsink->sock = usrsctp_socket(AF_INET6, SOCK_STREAM, IPPROTO_SCTP,
-                                       usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
+               usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
    if (sctpsink->src_port) {  // with given source port
@@ -467,7 +463,7 @@ gst_sctpsink_start (GstBaseSink * sink)
       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
       }
-   } else
+   }
    /* if (argc > 5) { // with udp encapsulation
     *    memset(&encaps, 0, sizeof(struct sctp_udpencaps));
     *    encaps.sue_address.ss_family = AF_INET6;
@@ -477,6 +473,24 @@ gst_sctpsink_start (GstBaseSink * sink)
     *       GST_ERROR_OBJECT(sctpsink, "setsockopt");
     *    }
     * } */
+
+   struct sctp_event event;
+   uint16_t event_types[] = {SCTP_ASSOC_CHANGE,
+                             SCTP_PEER_ADDR_CHANGE,
+                             SCTP_REMOTE_ERROR,
+                             SCTP_SHUTDOWN_EVENT,
+                             SCTP_ADAPTATION_INDICATION,
+                             SCTP_PARTIAL_DELIVERY_EVENT};
+   memset(&event, 0, sizeof(event));
+   event.se_assoc_id = SCTP_FUTURE_ASSOC;
+   event.se_on       = 1;
+   for (int i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
+      event.se_type = event_types[i];
+      if (usrsctp_setsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
+               sizeof(struct sctp_event)) < 0) {
+         GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SCTP_EVENT");
+      }
+   }
 
    // clear the addresses again
    memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
@@ -537,12 +551,12 @@ gst_sctpsink_stop (GstBaseSink * sink)
 
    if (!done) {
       if (usrsctp_shutdown(sctpsink->sock, SHUT_WR) < 0) {
-         GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown");
+         GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown: %s", strerror(errno));
       }
    }
 
    usrsctp_get_stat(&stat);
-   GST_DEBUG_OBJECT(sctpsink, "Number of packets (sent/received): (%u/%u)",
+   GST_INFO_OBJECT(sctpsink, "Number of packets (sent/received): (%u/%u)",
          stat.sctps_outpackets, stat.sctps_inpackets);
 
    while (usrsctp_finish() != 0) {
