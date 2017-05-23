@@ -209,7 +209,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    }
    g_object_set(sink,
          /* "host",   "127.0.0.1", */
-         "host",   "11.1.1.2",
+         "host",   "11.1.1.1",
          "port",    1117,
          NULL);
 

@@ -148,7 +148,7 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
       /* return -1; */
    }
    g_object_set(G_OBJECT(source),
-         "bind",   "11.1.1.2",
+         "bind",   "11.1.1.1",
          "port",   1117,
          NULL);
 
