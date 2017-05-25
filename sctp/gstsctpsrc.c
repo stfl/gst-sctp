@@ -61,6 +61,18 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL 9989
 #define SCTP_DEFAULT_UDP_ENCAPS FALSE
 
+
+/*  PORTS defined for the RECEIVER */
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "11.1.1.2"
+#define  SCTP_DEFAULT_DEST_PORT_PRIMARY    2221
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "11.1.1.1"
+#define  SCTP_DEFAULT_SRC_PORT_PRIMARY     1111
+
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.2" 
+#define  SCTP_DEFAULT_DEST_PORT_SECONDARY  2222
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.1.1.1"
+#define  SCTP_DEFAULT_SRC_PORT_SECONDARY   1112
+
 #define SCTP_DEFAULT_ASSOC_VALUE 47
 
 /* prototypes */
@@ -456,9 +468,8 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 
    memset((void *)&addr, 0, sizeof(struct sockaddr_in));
    addr.sin_family = AF_INET;
-   addr.sin_port   = htons(sctpsrc->port);
-   addr.sin_addr.s_addr   = inet_addr("11.1.1.1");
-   /* addr.sin_addr.s_addr   = (in_addr_t) INADDR_ANY; */
+   addr.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
+   addr.sin_addr.s_addr = inet_addr(SCTP_DEFAULT_SRC_IP_PRIMARY);
    GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
                    inet_ntop(AF_INET, &addr.sin_addr, name, INET_ADDRSTRLEN),
                    ntohs(addr.sin_port));

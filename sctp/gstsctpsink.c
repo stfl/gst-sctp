@@ -539,15 +539,16 @@ gst_sctpsink_start (GstBaseSink * sink)
    addr6.sin6_len = sizeof(struct sockaddr_in6);
 #endif
    addr4.sin_family = AF_INET;
-   addr6.sin6_family = AF_INET6;
-   addr4.sin_port = htons(sctpsink->port);
-   addr6.sin6_port = htons(sctpsink->port);
+   /* addr6.sin6_family = AF_INET6; */
+   addr4.sin_port = htons(SCTP_DEFAULT_DEST_PORT_PRIMARY);
+   /* addr6.sin6_port = htons(SCTP_DEFAULT_DEST_PORT_PRIMARY); */
    GST_TRACE_OBJECT(sctpsink, "connecting");
-   if (inet_pton(AF_INET6, sctpsink->host, &addr6.sin6_addr) == 1) {
-      if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
-         GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
-      }
-   } else if (inet_pton(AF_INET, sctpsink->host, &addr4.sin_addr) == 1) {
+   /* if (inet_pton(AF_INET6, sctpsink->host, &addr6.sin6_addr) == 1) {
+    *    if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
+    *       GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
+    *    }
+    * } else */
+   if (inet_pton(AF_INET, SCTP_DEFAULT_DEST_IP_PRIMARY, &addr4.sin_addr) == 1) {
       if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr4, sizeof(struct sockaddr_in)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
       }
