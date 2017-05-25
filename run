@@ -7,30 +7,35 @@ LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
 gst_debug_default="4,basesink:4,sctpsink:6,gstutils:5,basesrc:4,pushsrc:5,sctpsrc:5,rtph264pay:5,rtpbasepayload:5,rtpbuffer:7"
 
 usage() {
-   echo run [-fbuR] binary
+   echo "usage: run [-fbuR] binary"
    exit 1
 }
 
-zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string 
+zshexit() {
+   [[ ! ${+verbose[1]} ]] && set +x
+} 
+
+zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose
+
+[[ $# < 1 ]] && norun[1]=1
+(( ${+verbose[1]} )) && set -x
 
 if (( !${+GST_DEBUG} )); then
    # if given by -d > replace, otherwise take default
    export GST_DEBUG=${debug_string[2]:-${gst_debug_default}}
 fi
 
-[[ $# < 1 ]] && usage
-
 if (( ! ${+norun[1]} )); then
    try_bin=$1
-   if [[ -f $try_bin ]]; then
+   if [[ -x $try_bin ]]; then
       echo "found $try_bin"
       BIN=$try_bin
    else
       BIN="${PROJECT_DIR}/**/${try_bin}(*[1])"
-      if [[ ! -n ${~BIN} ]]; then
-         echo "binary (${~BIN}) not found"
-         usage
-      fi
+      # if [[ ! -f ${~BIN} ]]; then
+      #    echo "binary ( ${~BIN} ) not found"
+      #    usage
+      # fi
    fi
 fi
 
