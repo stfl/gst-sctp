@@ -374,7 +374,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
 
-   struct sockaddr_in6 addr;
+   struct sockaddr_in addr;
    struct sctp_udpencaps encaps;
    struct sctp_assoc_value av;
    const int on = 1;
@@ -382,7 +382,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    /* int flags; */
    /* socklen_t from_len; */
    /* char buffer[BUFFER_SIZE]; */
-   char name[INET6_ADDRSTRLEN];
+   char name[INET_ADDRSTRLEN];
    /* socklen_t infolen; */
    /* struct sctp_rcvinfo rcv_info; */
    /* unsigned int infotype; */
@@ -453,19 +453,31 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
     * } */
 
    /* define address for bind */
-   memset((void *)&addr, 0, sizeof(struct sockaddr_in6));
-#ifdef HAVE_SIN6_LEN
-   addr.sin6_len = sizeof(struct sockaddr_in6);
-#endif
-   addr.sin6_family = AF_INET6;
-   addr.sin6_port   = htons(sctpsrc->port);
+
+   memset((void *)&addr, 0, sizeof(struct sockaddr_in));
+   addr.sin_family = AF_INET;
+   addr.sin_port   = htons(sctpsrc->port);
+   addr.sin_addr.s_addr   = inet_addr("11.1.1.1");
+   /* addr.sin_addr.s_addr   = (in_addr_t) INADDR_ANY; */
    GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
-                   inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN),
-                   ntohs(addr.sin6_port));
-   addr.sin6_addr = in6addr_any;
-   if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) < 0) {
+                   inet_ntop(AF_INET, &addr.sin_addr, name, INET_ADDRSTRLEN),
+                   ntohs(addr.sin_port));
+   if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) < 0) {
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind");
    }
+/*    memset((void *)&addr, 0, sizeof(struct sockaddr_in6));
+ * #ifdef HAVE_SIN6_LEN
+ *    addr.sin6_len = sizeof(struct sockaddr_in6);
+ * #endif
+ *    addr.sin6_family = AF_INET6;
+ *    addr.sin6_port   = htons(sctpsrc->port);
+ *    addr.sin6_addr = in6addr_any;
+ *    GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
+ *                    inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN),
+ *                    ntohs(addr.sin6_port));
+ *    if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) < 0) {
+ *       GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind");
+ *    } */
    if (usrsctp_listen(sctpsrc->sock, 1) < 0) {
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen");
    }

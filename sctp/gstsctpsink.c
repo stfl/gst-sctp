@@ -64,6 +64,18 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL  9988
 #define SCTP_DEFAULT_UDP_ENCAPS             FALSE
 
+
+// paths definition
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "11.1.1.1"
+#define  SCTP_DEFAULT_DEST_PORT_PRIMARY    1111
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "11.1.1.2"
+#define  SCTP_DEFAULT_SRC_PORT_PRIMARY     2221
+
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.1"
+#define  SCTP_DEFAULT_DEST_PORT_SECONDARY  1112
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.1.1.2"
+#define  SCTP_DEFAULT_SRC_PORT_SECONDARY   2222
+
 #define SCTP_PPID       99
 #define SCTP_SID        1
 #define SCTP_ASSOC_ID   1
@@ -430,6 +442,7 @@ gst_sctpsink_start (GstBaseSink * sink)
    struct sockaddr *addrs;
    struct sockaddr_in addr4;
    struct sockaddr_in6 addr6;
+   char name[INET_ADDRSTRLEN];
    /* struct sctp_udpencaps encaps; */
    /* char buffer[80]; */
    int n;
@@ -451,19 +464,43 @@ gst_sctpsink_start (GstBaseSink * sink)
                usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
-   if (sctpsink->src_port) {  // with given source port
-      memset((void *)&addr6, 0, sizeof(struct sockaddr_in6));
-#ifdef HAVE_SIN6_LEN
-      addr6.sin6_len = sizeof(struct sockaddr_in6);
-#endif
-      addr6.sin6_family = AF_INET6;
-      addr6.sin6_port = htons( sctpsink->src_port );
-      addr6.sin6_addr = in6addr_any;
-      GST_TRACE_OBJECT(sctpsink, "binding");
-      if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
+   /* if (sctpsink->src_port) {  // with given source port */
+
+      memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
+      addr4.sin_family = AF_INET;
+      addr4.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
+      addr4.sin_addr.s_addr   = inet_addr(SCTP_DEFAULT_SRC_IP_PRIMARY);
+      /* addr4.sin_addr.s_addr   = (in_addr_t) INADDR_ANY; */
+      GST_INFO_OBJECT(sctpsink, "binding client to: %s:%d",
+            inet_ntop(AF_INET, &addr4.sin_addr, name, INET_ADDRSTRLEN),
+            ntohs(addr4.sin_port));
+      if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr4, sizeof(struct sockaddr_in)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
       }
-   }
+
+/*       memset((void *)&addr6, 0, sizeof(struct sockaddr_in6)); */
+/* #ifdef HAVE_SIN6_LEN */
+/*       addr6.sin6_len = sizeof(struct sockaddr_in6); */
+/* #endif */
+/*       addr6.sin6_family = AF_INET6; */
+/*       addr6.sin6_port = htons( sctpsink->src_port ); */
+/*       addr6.sin6_addr = in6addr_any; */
+/*       GST_TRACE_OBJECT(sctpsink, "binding"); */
+/*       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) { */
+/*          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind"); */
+/*       } */
+/*       memset((void *)&addr6, 0, sizeof(struct sockaddr_in6));
+ * #ifdef HAVE_SIN6_LEN
+ *       addr6.sin6_len = sizeof(struct sockaddr_in6);
+ * #endif
+ *       addr6.sin6_family = AF_INET6;
+ *       addr6.sin6_port = htons( sctpsink->src_port );
+ *       addr6.sin6_addr = in6addr_any;
+ *       GST_TRACE_OBJECT(sctpsink, "binding");
+ *       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
+ *          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
+ *       } */
+   /* } */
    /* if (argc > 5) { // with udp encapsulation
     *    memset(&encaps, 0, sizeof(struct sctp_udpencaps));
     *    encaps.sue_address.ss_family = AF_INET6;
