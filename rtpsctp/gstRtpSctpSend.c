@@ -145,95 +145,49 @@ gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
 void
 gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 {
-   GstElement *pipeline, *source, *sink, *encoder, *rtppay;
-
    /* create pipeline */
-   pipeline = gst_pipeline_new ("pipeline");
+   GstElement *pipeline = gst_pipeline_new ("pipeline");
 
    /* create element */
-   source = gst_element_factory_make("videotestsrc", "source");
-   if (!source) {
-      /* g_print ("Failed to create element of type 'videotestsrc'\n"); */
-      g_print ("Failed to create element of type 'videotestsrc'\n");
-      /* return -1; */
-   }
-   g_object_set(G_OBJECT(source),
-         /* "pattern",   GstVideoTestSrcPattern.GST_VIDEO_TEST_SRC_SNOW, */
-         "is-live",   TRUE,
-         NULL);
-   gst_util_set_object_arg(G_OBJECT(source), "pattern", "snow");
+   GstElement *source = gst_element_factory_make("videotestsrc", "source");
+   gst_util_set_object_arg(G_OBJECT(source), "is-live", "true");
+   gst_util_set_object_arg(G_OBJECT(source), "pattern", "gradient");
+   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "100");
+
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
-         "format", G_TYPE_STRING, "I420",
-         "width", G_TYPE_INT, 800,
-         "height", G_TYPE_INT, 600,
-         "framerate", GST_TYPE_FRACTION, 25, 1,
+         "format",     G_TYPE_STRING,      "RGBA",
+         "width",      G_TYPE_INT,         300,
+         "height",     G_TYPE_INT,         200,
+         "framerate",  GST_TYPE_FRACTION,  24,  1,
          NULL);
 
-   encoder = gst_element_factory_make("x264enc", "encoder");
-   if (!encoder) {
-      g_print ("failed to create element of type 'x264enc'\n");
-      /* return -1; */
-   }
-   gst_util_set_object_arg(G_OBJECT(encoder), "tune", "zerolatency");
-   /* g_object_set(encoder, "tune", (GstX264EncTune)"zerolatency", NULL); */
+   GstElement *timeoverlay = gst_element_factory_make("timeoverlay", "timeoverlay");
+   gst_util_set_object_arg(G_OBJECT(timeoverlay), "halignment", "right");
+   gst_util_set_object_arg(G_OBJECT(timeoverlay), "valignment", "top");
+   gst_util_set_object_arg(G_OBJECT(timeoverlay), "font-desc",  "Sans, 35");
+   gst_util_set_object_arg(G_OBJECT(timeoverlay), "time-mode",  "stream-time");
 
-
-   rtppay = gst_element_factory_make("rtph264pay", "rtppay");
-   if (!rtppay) {
-      g_print ("failed to create element of type 'rtph264pay'\n");
-      /* return -1; */
-   }
-   gst_util_set_object_arg(G_OBJECT(rtppay), "mtu", "65536");
-
-   /* GstCaps *rtppay_caps = gst_caps_new_simple ("application/x-rtp", */
-/* media=(string)video, */
-/* clock-rate=(int)90000, */
-/* encoding-name=(string)H264, */
-/* payload=(int)96, */
-/* ssrc=(uint)950264809, */
-/* timestamp-offset=(uint)2250056347, */
-/* seqnum-offset=(uint)18833, */
-/* a-framerate=(string)25 */
-         /* NULL); */
+   GstElement *rtppay = gst_element_factory_make("rtpvrawpay", "rtppay");
+   gst_util_set_object_arg(G_OBJECT(rtppay), "mtu", "1400");
 
    GstElement *queue = gst_element_factory_make("queue2", "queue");
-   if (!queue) {
-      g_print ("Failed to create element of type 'queue'\n");
-      /* return -1; */
-   }
 
-   sink = gst_element_factory_make("sctpsink", "sink");
-   if (!sink) {
-      g_print ("Failed to create element of type 'sctpsink'\n");
-      /* return -1; */
-   }
+   GstElement *sink = gst_element_factory_make("sctpsink", "sink");
    g_object_set(sink,
-         /* "host",   "127.0.0.1", */
          "host",   "11.1.1.1",
          "port",    1117,
          NULL);
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, encoder, rtppay, queue, sink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, timeoverlay, rtppay, queue, sink, NULL);
 
    /* link */
-   if (!gst_element_link_filtered(source, encoder, src_caps)) {
+   if (!gst_element_link_filtered(source, timeoverlay, src_caps)) {
       g_warning ("Failed to link filterd source and enocder!\n");
    }
    gst_caps_unref(src_caps);
 
-   if (!gst_element_link(encoder, rtppay)) {
-      g_warning ("Failed to link filterd encoder and rtppay!\n");
-   }
-
-   if (!gst_element_link(rtppay, queue)) {
-      g_warning ("Failed to link filterd rtppay and queue!\n");
-   }
-
-   if (!gst_element_link(queue, sink)) {
-      g_critical ("Failed to link queue and sink'\n");
-   }
-
+   gst_element_link_many(timeoverlay, rtppay, queue, sink, NULL);
 
    RtpSctpSender->pipeline = pipeline;
 
@@ -246,7 +200,6 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    RtpSctpSender->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "sink");
 
    RtpSctpSender->sctpsink = sink;
-   RtpSctpSender->encoder = encoder;
    RtpSctpSender->queue = queue;
 }
 

@@ -68,7 +68,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_SRC_IP_PRIMARY       "11.1.1.1"
 #define  SCTP_DEFAULT_SRC_PORT_PRIMARY     1111
 
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.2" 
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.2"
 #define  SCTP_DEFAULT_DEST_PORT_SECONDARY  2222
 #define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.1.1.1"
 #define  SCTP_DEFAULT_SRC_PORT_SECONDARY   1112
@@ -446,23 +446,24 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    }
 
    /* subscribe to the given events in event_types[] */
-   /* struct sctp_event event;
-    * uint16_t event_types[] = {SCTP_ASSOC_CHANGE,
-    *                           SCTP_PEER_ADDR_CHANGE,
-    *                           SCTP_REMOTE_ERROR,
-    *                           SCTP_SHUTDOWN_EVENT,
-    *                           SCTP_ADAPTATION_INDICATION,
-    *                           SCTP_PARTIAL_DELIVERY_EVENT};
-    * memset(&event, 0, sizeof(event));
-    * event.se_assoc_id = SCTP_FUTURE_ASSOC;
-    * event.se_on       = 1;
-    * for (int i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
-    *    event.se_type = event_types[i];
-    *    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
-    *                           sizeof(struct sctp_event)) < 0) {
-    *       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_EVENT");
-    *    }
-    * } */
+   struct sctp_event event;
+   uint16_t event_types[] = {SCTP_SHUTDOWN_EVENT
+                           /* , SCTP_ASSOC_CHANGE */
+                           /* , SCTP_PEER_ADDR_CHANGE */
+                           , SCTP_REMOTE_ERROR
+                           /* , SCTP_ADAPTATION_INDICATION */
+                           /* , SCTP_PARTIAL_DELIVERY_EVENT */
+                           };
+   memset(&event, 0, sizeof(event));
+   event.se_assoc_id = SCTP_FUTURE_ASSOC;
+   event.se_on       = 1;
+   for (int i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
+      event.se_type = event_types[i];
+      if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
+                             sizeof(struct sctp_event)) < 0) {
+         GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_EVENT");
+      }
+   }
 
    /* define address for bind */
 
@@ -499,14 +500,15 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
 {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
-   /* GST_DEBUG_OBJECT(sctpsrc, "stop"); */
+   GST_DEBUG_OBJECT(sctpsrc, "stop");
 
-   //FIXME notify other side of termination!
 
+   if (usrsctp_shutdown(sctpsrc->sock, SHUT_RDWR) < 0)
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_shutdown: %s", strerror(errno));
    usrsctp_close(sctpsrc->sock);
-   while (usrsctp_finish() != 0) {
-      sleep(1);
-   }
+   /* while (usrsctp_finish() != 0) { */
+   /*    sleep(1); */
+   /* } */
 
    return TRUE;
 }
@@ -605,10 +607,14 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
    if (n > 0) {
       if (flags & MSG_NOTIFICATION) {
          union sctp_notification *sn = (union sctp_notification *)map.data;
-         /* switch(sn->sn_header.sn_type) { */
-         /*     case SCTP_COMM_UP: { */
          GST_TRACE_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
                           sn->sn_header.sn_type, (unsigned long long)n);
+         switch (sn->sn_header.sn_type) {
+            case SCTP_SHUTDOWN_EVENT:
+               GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
+               gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc));
+               break;
+         }
       } else {
          if (infotype == SCTP_RECVV_RCVINFO) {
             GST_TRACE_OBJECT(

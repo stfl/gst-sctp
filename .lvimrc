@@ -48,12 +48,11 @@ augroup MyProject
    autocmd!
    autocmd BufNewFile,BufRead *.[ch] set filetype=c
    autocmd BufWritePost *.[ch] Neomake! install
-   " autocmd User NeomakeFinished call OnNeomakeFinished()
+   autocmd User NeomakeFinished call OnNeomakeFinished()
 augroup END
 
 function! OnNeomakeFinished()
-   echom "install"
-   Neomake! install
+   echom "build finished"
 endfunction
 
 " :cnf   > first error in qf

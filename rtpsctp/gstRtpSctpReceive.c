@@ -143,97 +143,45 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 
    /* create element */
    GstElement *source = gst_element_factory_make("sctpsrc", "source");
-   if (!source) {
-      g_critical ("Failed to create element of type 'sctpsrc'\n");
-      /* return -1; */
-   }
    g_object_set(G_OBJECT(source),
          "host",   "11.1.1.1",
          "port",   1117,
          NULL);
 
    GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
-         "media",              G_TYPE_STRING, "video",
-         "clock-rate",         G_TYPE_INT,    90000,
-         "encoding-name",      G_TYPE_STRING, "H264",
-         "a-framerate",        G_TYPE_STRING, "25",
-         "packetization-mode", G_TYPE_STRING, "1",
-         "payload",            G_TYPE_INT,    96,
+         "media",          G_TYPE_STRING,  "video",
+         "clock-rate",     G_TYPE_INT,     90000,
+         "encoding-name",  G_TYPE_STRING,  "RAW",
+         "sampling",       G_TYPE_STRING,  "RGBA",
+         "depth",          G_TYPE_STRING,  "8",
+         "width",          G_TYPE_STRING,  "300",
+         "height",         G_TYPE_STRING,  "200",
+         "a-framerate",    G_TYPE_STRING,  "24",
+         "payload",        G_TYPE_INT,     96,
          NULL);
 
-   GstElement *rtpdepay = gst_element_factory_make("rtph264depay", "rtpdepay");
-   if (!rtpdepay) {
-      g_critical ("failed to create element of type 'rtph264depay'\n");
-      /* return -1; */
-   }
+   GstElement *rtpdepay = gst_element_factory_make("rtpvrawdepay", "rtpdepay");
 
    GstElement *jitterbuffer = gst_element_factory_make("rtpjitterbuffer", "jitterbuffer");
-   if (!jitterbuffer) {
-      g_critical ("Failed to create element of type 'rtpjitterbuffer'\n");
-      /* return -1; */
-   }
    g_object_set(G_OBJECT(jitterbuffer),
-         "latency", 100,
-         "max-dropout-time", 100,
-         "max-misorder-time", 100, // ms
-         NULL );
-
-   GstElement *decoder = gst_element_factory_make("avdec_h264", "decoder");
-   if (!decoder) {
-      g_critical ("failed to create element of type 'avdec_h264'\n");
-      /* return -1; */
-   }
-
-   GstCaps *decode_caps = gst_caps_new_simple("video/x-h264",
-         "stream-format",      G_TYPE_STRING,     "avc",
-         "alignment",          G_TYPE_STRING,     "au",
-         "level",              G_TYPE_STRING,     "3.1",
-         "width",              G_TYPE_INT,        1280,
-         "height",             G_TYPE_INT,        720,
-         "framerate",          GST_TYPE_FRACTION, 25,    1,
-         "pixel-aspect-ratio", GST_TYPE_FRACTION, 1,     1,
+         "latency",            100,
+         "max-dropout-time",   100,
+         "max-misorder-time",  100,  // ms
          NULL);
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
-   if (!videoconvert) {
-      g_critical ("failed to create element of type 'videoconvert'\n");
-      /* return -1; */
-   }
-
    GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
-   if (!videosink) {
-      g_critical ("Failed to create element of type 'ximagesink'\n");
-      /* return -1; */
-   }
 
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, decoder, videoconvert,
-         videosink, NULL);
-
-   /* link */
- /* rtpdepay, decoder, */
+   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, videoconvert, videosink,
+         NULL);
 
    if (!gst_element_link_filtered(source, jitterbuffer, src_caps)) {
       g_warning ("Failed to link filterd source and jitterbuffer!\n");
    }
    gst_caps_unref(src_caps);
 
-   if (!gst_element_link(jitterbuffer, rtpdepay)) {
-      g_critical ("Failed to link jitterbuffer and rtpdepay'\n");
-   }
-
-   if (!gst_element_link_filtered(rtpdepay, decoder, decode_caps)) {
-      g_critical ("Failed to link rtpdepay and decoder'\n");
-   }
-   gst_caps_unref(decode_caps);
-
-   if (!gst_element_link(decoder, videoconvert)) {
-      g_critical ("Failed to link decoder and videoconvert'\n");
-   }
-
-   if (!gst_element_link(videoconvert, videosink)) {
-      g_critical ("Failed to link videoconvert and videosink'\n");
-   }
+   gst_element_link_many(jitterbuffer, rtpdepay, videoconvert, videosink, NULL);
 
    RtpSctpReceiver->pipeline = pipeline;
 

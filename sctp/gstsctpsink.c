@@ -587,11 +587,9 @@ gst_sctpsink_stop (GstBaseSink * sink)
 
    GST_DEBUG_OBJECT (sctpsink, "stop");
 
-   if (!done) {
-      if (usrsctp_shutdown(sctpsink->sock, SHUT_WR) < 0) {
-         GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown: %s", strerror(errno));
-      }
-   }
+   if (usrsctp_shutdown(sctpsink->sock, SHUT_RDWR) < 0)
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown: %s", strerror(errno));
+   usrsctp_close(sctpsink->sock);
 
    usrsctp_get_stat(&stat);
    GST_INFO_OBJECT(sctpsink, "Number of packets (sent/received): (%u/%u)",

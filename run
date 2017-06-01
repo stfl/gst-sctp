@@ -4,7 +4,7 @@ PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
 export GST_PLUGIN_PATH=${PROJECT_DIR}/build
 LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
 
-gst_debug_default="4,basesink:4,sctpsink:6,gstutils:5,basesrc:4,pushsrc:5,sctpsrc:5,rtph264pay:5,rtpbasepayload:5,rtpbuffer:7"
+gst_debug_default=""
 
 usage() {
    echo "usage: run [-fbuR] binary"
@@ -66,5 +66,5 @@ if (( ${+norun[1]} )); then
 fi
 
 # run sender
-sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} ${~BIN}
+sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} ${~BIN} 2>&1
 
