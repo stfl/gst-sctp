@@ -136,10 +136,9 @@ static GstStaticPadTemplate gst_sctpsrc_src_template =
 
 /* class initialization */
 G_DEFINE_TYPE_WITH_CODE(GstSctpSrc, gst_sctpsrc, GST_TYPE_PUSH_SRC,
-                        GST_DEBUG_CATEGORY_INIT(gst_sctpsrc_debug_category, "sctpsrc",
-                                                GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_WHITE |
-                                                    GST_DEBUG_BOLD,
-                                                "debug category for sctpsrc element"));
+               GST_DEBUG_CATEGORY_INIT(gst_sctpsrc_debug_category, "sctpsrc",
+                              GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_RED | GST_DEBUG_BOLD,
+                              "debug category for sctpsrc element"));
 
 static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
    GObjectClass *gobject_class     = G_OBJECT_CLASS(klass);
@@ -334,6 +333,11 @@ void gst_sctpsrc_finalize(GObject *object)
    g_free (sctpsrc->host);
    sctpsrc->host = NULL;
 
+   // free all memory
+   while (usrsctp_finish() != 0) {
+      sleep(1);
+   }
+
    G_OBJECT_CLASS(gst_sctpsrc_parent_class)->finalize(object);
 }
 
@@ -494,6 +498,8 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen");
    }
 
+   sctpsrc->socket_open = TRUE;
+
    return TRUE;
 }
 
@@ -502,13 +508,17 @@ static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
    GST_DEBUG_OBJECT(sctpsrc, "stop");
 
+   if (! sctpsrc->socket_open)
+      return TRUE;
 
-   if (usrsctp_shutdown(sctpsrc->sock, SHUT_RDWR) < 0)
-      GST_ERROR_OBJECT(sctpsrc, "usrsctp_shutdown: %s", strerror(errno));
    usrsctp_close(sctpsrc->sock);
-   /* while (usrsctp_finish() != 0) { */
-   /*    sleep(1); */
-   /* } */
+
+   // free all memory
+   while (usrsctp_finish() != 0) {
+      sleep(1);
+   }
+
+   sctpsrc->socket_open = FALSE;
 
    return TRUE;
 }
@@ -613,7 +623,7 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
             case SCTP_SHUTDOWN_EVENT:
                GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
                gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc));
-               break;
+               return GST_FLOW_EOS;
          }
       } else {
          if (infotype == SCTP_RECVV_RCVINFO) {

@@ -138,7 +138,7 @@ GST_STATIC_PAD_TEMPLATE ("sink",
       GST_STATIC_CAPS_ANY
       );
 
-/* class initializa[con */
+/* class initialization */
 G_DEFINE_TYPE_WITH_CODE (GstSctpSink, gst_sctpsink, GST_TYPE_BASE_SINK,
       GST_DEBUG_CATEGORY_INIT (gst_sctpsink_debug_category, "sctpsink",
          GST_DEBUG_BG_GREEN | GST_DEBUG_FG_RED | GST_DEBUG_BOLD,
@@ -277,8 +277,6 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
-   GST_DEBUG_OBJECT (sctpsink, "get_property");
-
    switch (property_id) {
       case PROP_HOST:
          g_value_set_string (value, sctpsink->host);
@@ -330,6 +328,11 @@ gst_sctpsink_finalize (GstSctpSink * sctpsink)
 
    g_free (sctpsink->host);
    sctpsink->host = NULL;
+
+   // free all memory
+   while (usrsctp_finish() != 0) {
+      sleep(1);
+   }
 
    G_OBJECT_CLASS (gst_sctpsink_parent_class)->finalize ((GObject *) sctpsink);
 }
@@ -575,7 +578,8 @@ gst_sctpsink_start (GstBaseSink * sink)
       usrsctp_freepaddrs(addrs);
    }
 
-   sctpsink->stats_timer_id = g_timeout_add (3000, stats_timer, sctpsink);
+   sctpsink->socket_open = TRUE;
+   sctpsink->stats_timer_id = g_timeout_add (1000, stats_timer, sctpsink);
    return TRUE;
 }
 
@@ -584,17 +588,19 @@ gst_sctpsink_stop (GstBaseSink * sink)
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
    struct sctpstat stat;
-
    GST_DEBUG_OBJECT (sctpsink, "stop");
 
    if (usrsctp_shutdown(sctpsink->sock, SHUT_RDWR) < 0)
       GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown: %s", strerror(errno));
    usrsctp_close(sctpsink->sock);
 
+   sctpsink->socket_open = FALSE;
+
    usrsctp_get_stat(&stat);
    GST_INFO_OBJECT(sctpsink, "Number of packets (sent/received): (%u/%u)",
          stat.sctps_outpackets, stat.sctps_inpackets);
 
+   // free all memory
    while (usrsctp_finish() != 0) {
       sleep(1);
    }
@@ -816,7 +822,7 @@ static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer) {
    RTPHeader *rtph = (RTPHeader *)buffer;
    GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u PT:%u, Seq:%5u, TS:%10u, ssrc:%9u",
           rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
-          rtph->seq_num, rtph->TS, rtph->ssrc);
+          rtph->seq_num, ntohl(rtph->TS), rtph->ssrc);
 }
 
 static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str) {
@@ -868,21 +874,11 @@ static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int 
 static gboolean stats_timer (gpointer priv) {
    GstSctpSink *sctpsink = (GstSctpSink *)priv;
 
+   if ( ! sctpsink->socket_open) {
+      return FALSE;
+   }
+
    socklen_t len;
-   /* struct sctp_paddrinfo addrinfo = {
-    *    .spinfo_assoc_id = SCTP_ASSOC_ID
-    * };
-    * len = (socklen_t)sizeof(struct sctp_paddrinfo);
-    * if (usrsctp_getsockopt(sctpsink->sock,
-    *          IPPROTO_SCTP,
-    *          SCTP_GET_PEER_ADDR_INFO,
-    *          &addrinfo,
-    *          &len) < 0) {
-    *    GST_ERROR_OBJECT(sctpsink, "error getting peer addr info: %s", strerror(errno));
-    * } */
-
-   /* GST_INFO_OBJECT(sctpsink,"returned length: %u", addrinfo_len); */
-
    struct sctp_status status;
    len = (socklen_t)sizeof(struct sctp_status);
    if (usrsctp_getsockopt(sctpsink->sock,

@@ -32,6 +32,8 @@
 
 #define GETTEXT_PACKAGE "RtpSctpReceiver"
 
+GST_DEBUG_CATEGORY_STATIC (rtpsctprecv);
+#define GST_CAT_DEFAULT rtpsctprecv
 
 typedef struct _GstRtpSctpReceiver GstRtpSctpReceiver;
 struct _GstRtpSctpReceiver
@@ -65,6 +67,7 @@ static gboolean stats_timer (gpointer priv);
 
 gboolean verbose;
 
+
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
 
@@ -88,6 +91,10 @@ main (int argc, char *argv[])
       exit (1);
    }
    g_option_context_free (context);
+
+   GST_DEBUG_CATEGORY_INIT (rtpsctprecv, "rtpsctprecv",
+         GST_DEBUG_BG_YELLOW | GST_DEBUG_FG_WHITE | GST_DEBUG_BOLD,
+         "The RTP over SCTP Receiver Pipeline");
 
    RtpSctpReceiver = gst_RtpSctpReceiver_new ();
    gst_RtpSctpReceiver_create_pipeline (RtpSctpReceiver);
@@ -154,8 +161,8 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          "encoding-name",  G_TYPE_STRING,  "RAW",
          "sampling",       G_TYPE_STRING,  "RGBA",
          "depth",          G_TYPE_STRING,  "8",
-         "width",          G_TYPE_STRING,  "300",
-         "height",         G_TYPE_STRING,  "200",
+         "width",          G_TYPE_STRING,  "90",
+         "height",         G_TYPE_STRING,  "60",
          "a-framerate",    G_TYPE_STRING,  "24",
          "payload",        G_TYPE_INT,     96,
          NULL);
@@ -263,7 +270,12 @@ static void
 gst_RtpSctpReceiver_handle_paused_to_playing (GstRtpSctpReceiver *
       RtpSctpReceiver)
 {
-   RtpSctpReceiver->stats_timer_id = g_timeout_add (3000, stats_timer, RtpSctpReceiver);
+   RtpSctpReceiver->stats_timer_id = g_timeout_add (1000, stats_timer, RtpSctpReceiver);
+   GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(RtpSctpReceiver->pipeline),
+         GST_DEBUG_GRAPH_SHOW_ALL,
+         "receiver");
+/* https://gstreamer.freedesktop.org/data/doc/gstreamer/head/gstreamer/html/gstreamer-GstInfo.html#GstDebugGraphDetails
+ */
 }
 
 static void
@@ -436,6 +448,7 @@ stats_timer (gpointer priv)
    GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
    GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
 
+   // Jitter Bufer Stats
    guint64 num_pushed, num_lost, num_late, num_duplicate=0;
    gdouble avg_jitter;
    GstStructure *jbuf_stats;
@@ -449,28 +462,23 @@ stats_timer (gpointer priv)
             NULL)) {
       g_error("error getting the jitterbuffer stats");
    }
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Jbuffer STATS: ~jitter: %f #pushed: %8lu, #lost: %3lu, #late: %4lu, #dupl: %3lu",
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "jbuffer STATS: ~jitter: %f #pushed: %8lu, "
+         "#lost: %3lu, #late: %4lu, #dupl: %3lu",
          avg_jitter, num_pushed, num_lost, num_late, num_duplicate);
 
    // FIXME somehow free(stats);
 
+
+   // usrsctp Stats
    struct sctpstat *usrsctp_stats = NULL;
    g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "usrsctp-stats", &usrsctp_stats, NULL);
 
-   /* GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "usrsctp STATS: rdata %f, sdata %6u, " */
-   /*       "hb %2u, todata %2u drpchklmt %u, randry %u", */
-   /*       (double)usrsctp_stats->sctps_recvdata,            [> total input DATA chunks    <] */
-   /*       usrsctp_stats->sctps_senddata,            [> total output DATA chunks   <] */
-   /*       usrsctp_stats->sctps_sendheartbeat,       [> total output HB chunks     <] */
-   /*       usrsctp_stats->sctps_timodata,            [> Number of T3 data time outs <] */
-   /*       usrsctp_stats->sctps_datadropchklmt,      [> Number of in data drops due to chunk limit reached <] */
-   /*       usrsctp_stats->sctps_primary_randry      [> Number of times the sender ran dry of user data on primary <] */
-   /*       ); */
-
    guint64 pushed;
    g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "pushed", &pushed, NULL);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "pushed %lu rdata %u %0.2f, drp %u",
-         pushed, usrsctp_stats->sctps_recvdata,
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "usrsctp rdata %u, src pushed %lu, %0.2f, "
+         "usrsctp drp %u",
+         usrsctp_stats->sctps_recvdata,
+         pushed,
          (gdouble)pushed/(usrsctp_stats->sctps_recvdata),
          usrsctp_stats->sctps_pdrpmbda
          );

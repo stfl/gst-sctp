@@ -1,11 +1,11 @@
 GStreamer SCTP Plugin
 
-sctpsrc
-sctpsink
+**sctpsrc**
+**sctpsink**
 
 depends on: libusrsctp github.com/sctplab/usrsctp
 
-## Build // Install
+# Build // Install
 
 build **libusrsctp** with cmake
 
@@ -29,7 +29,7 @@ ninja
 sudo ninja install
 ```
 
-## Run
+# Run
 
 ```bash
 ./run build/rtpsctp/rtpsctpsend -d "4,basesink:8,gstutils:5,buffer:9,sctpsink:8,videotestsrc:4,textoverlay:8"
@@ -40,6 +40,7 @@ sudo ninja install
 The GST_DEBUG string can be specified with `-d`
 the run script offers the options to build the project `-d`, build usersctp `-u`, fetch from
 upstream `-f` and so on..
+`--dot [dir]` to output the .dot files when the pipeline enters playing state
 
 
 Run directly:
@@ -56,12 +57,21 @@ sudo -E LD_LIBRARY_PATH=/home/slendl/Projects/gst/gst-sctp/usrsctp/build \
    ./build/rtpsctp/rtpsctpsend 2>&1
 ```
 
+## convert .dot files to .png
+
+``` bash
+dot dot/sender.dot -Tpng -o dot/sender.png
+dot dot/receiver.dot -Tpng -o dot/reveiver.png
+```
+
 # Setup for Experiments
 
 briefly:
 
 two VMs with network interfaces like this
 
+```sh
 11.1.1.1  <--->  11.1.1.2
 12.1.1.1  <--->  12.1.1.2
+```
 

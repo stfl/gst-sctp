@@ -4,10 +4,11 @@ PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
 export GST_PLUGIN_PATH=${PROJECT_DIR}/build
 LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
 
+dot_dir_default=${PROJECT_DIR}/dot
 gst_debug_default=""
 
 usage() {
-   echo "usage: run [-fbuR] binary"
+   echo "usage: run [-fbuvR] [--dot [dir]] binary"
    exit 1
 }
 
@@ -15,7 +16,7 @@ zshexit() {
    [[ ! ${+verbose[1]} ]] && set +x
 } 
 
-zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose
+zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir
 
 [[ $# < 1 ]] && norun[1]=1
 (( ${+verbose[1]} )) && set -x
@@ -63,6 +64,14 @@ fi
 
 if (( ${+norun[1]} )); then
    exit 0
+fi
+
+if (( ${+dot_dir[1]} )); then
+   # the option --dot <dir> is added into the same field [1] > substitute the option
+   # if result is empty > take default
+   DOT_DIR=${${dot_dir[1]:s/--dot//}:-${dot_dir_default}}
+   mkdir -p $DOT_DIR
+   export GST_DEBUG_DUMP_DOT_DIR=$DOT_DIR
 fi
 
 # run sender

@@ -49,6 +49,7 @@ struct _GstSctpSrc {
   gint      udp_encaps_port_remote;
 
   struct socket *sock;
+  gboolean  socket_open;
 
   gint       ttl;
   GstCaps   *caps;

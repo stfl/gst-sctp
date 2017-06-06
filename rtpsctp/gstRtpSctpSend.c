@@ -32,6 +32,9 @@
 
 #define GETTEXT_PACKAGE "RtpSctpSender"
 
+GST_DEBUG_CATEGORY_STATIC (rtpsctpsend);
+#define GST_CAT_DEFAULT rtpsctpsend
+
 
 typedef struct __GstRtpSctpSender _GstRtpSctpSender;
 struct __GstRtpSctpSender
@@ -44,7 +47,6 @@ struct __GstRtpSctpSender
    GstElement *sink_element;
    GstElement *sctpsink;
    GstElement *queue;
-   GstElement *encoder;
 
    gboolean paused_for_buffering;
    guint timer_id;
@@ -86,6 +88,10 @@ main (int argc, char *argv[])
       exit (1);
    }
    g_option_context_free (context);
+
+   GST_DEBUG_CATEGORY_INIT (rtpsctpsend, "rtpsctpsend",
+         GST_DEBUG_BG_GREEN | GST_DEBUG_FG_WHITE | GST_DEBUG_BOLD,
+         "The RTP over SCTP Sender Pipeline");
 
    RtpSctpSender = gst_RtpSctpSender_new ();
       gst_RtpSctpSender_create_pipeline (RtpSctpSender);
@@ -129,10 +135,6 @@ gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
       gst_object_unref (RtpSctpSender->queue);
       RtpSctpSender->queue = NULL;
    }
-   if (RtpSctpSender->encoder) {
-      gst_object_unref (RtpSctpSender->encoder);
-      RtpSctpSender->encoder = NULL;
-   }
 
    if (RtpSctpSender->pipeline) {
       gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
@@ -156,15 +158,15 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
          "format",     G_TYPE_STRING,      "RGBA",
-         "width",      G_TYPE_INT,         300,
-         "height",     G_TYPE_INT,         200,
+         "width",      G_TYPE_INT,         90,
+         "height",     G_TYPE_INT,         60,
          "framerate",  GST_TYPE_FRACTION,  24,  1,
          NULL);
 
    GstElement *timeoverlay = gst_element_factory_make("timeoverlay", "timeoverlay");
    gst_util_set_object_arg(G_OBJECT(timeoverlay), "halignment", "right");
    gst_util_set_object_arg(G_OBJECT(timeoverlay), "valignment", "top");
-   gst_util_set_object_arg(G_OBJECT(timeoverlay), "font-desc",  "Sans, 35");
+   gst_util_set_object_arg(G_OBJECT(timeoverlay), "font-desc",  "Sans, 55");
    gst_util_set_object_arg(G_OBJECT(timeoverlay), "time-mode",  "stream-time");
 
    GstElement *rtppay = gst_element_factory_make("rtpvrawpay", "rtppay");
@@ -187,7 +189,19 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    }
    gst_caps_unref(src_caps);
 
-   gst_element_link_many(timeoverlay, rtppay, queue, sink, NULL);
+   /* gst_element_link_many(timeoverlay, rtppay, queue, sink, NULL); */
+
+   if (!gst_element_link(timeoverlay, rtppay)) {
+      g_warning ("Failed to link timeoverlay, rrtppay!\n");
+   }
+
+   if (!gst_element_link(rtppay, queue)) {
+      g_critical ("Failed to link rtppay, queue'\n");
+   }
+
+   if (!gst_element_link(queue, sink)) {
+      g_critical ("Failed to link queue, sink'\n");
+   }
 
    RtpSctpSender->pipeline = pipeline;
 
@@ -267,7 +281,10 @@ static void
 gst_RtpSctpSender_handle_paused_to_playing (_GstRtpSctpSender *
       RtpSctpSender)
 {
-   RtpSctpSender->timer_id = g_timeout_add (3000, stats_timer, RtpSctpSender);
+   RtpSctpSender->timer_id = g_timeout_add (1000, stats_timer, RtpSctpSender);
+   GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(RtpSctpSender->pipeline),
+         GST_DEBUG_GRAPH_SHOW_ALL,
+         "sender");
 }
 
 static void
@@ -429,10 +446,7 @@ static gboolean stats_timer (gpointer priv)
    _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
    /* GstElement *sctpsink = gst_bin_get_by_name (GST_BIN (RtpSctpSender->pipeline), "sink"); */
 
-   gint bitrate;
-   g_object_get(G_OBJECT(RtpSctpSender->encoder), "bitrate", &bitrate, NULL);
-   GST_INFO_OBJECT(RtpSctpSender->pipeline, "Encoder bitrate %4u kbit/s", bitrate);
-
+   // queue Stats (before the sink)
    guint lvl_buf, lvl_byte;
    guint64 lvl_time;
    gint64 avg_in;
@@ -442,9 +456,11 @@ static gboolean stats_timer (gpointer priv)
          "current-level-time", &lvl_time,
          "avg-in-rate", &avg_in,
          NULL);
-   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: current #%3u, %3ukB, %luns, avg: %ld kbit/s",
+   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: #%3u, %3ukB, %luns, avg: %ld kbit/s",
          lvl_buf, (lvl_byte >> 10), lvl_time, (avg_in >> 7));
 
+
+   // usrsctp stats
    struct sctpstat *stats = NULL;
    g_object_get(G_OBJECT(RtpSctpSender->sctpsink), "usrsctp-stats", &stats, NULL);
    GST_INFO_OBJECT(RtpSctpSender->pipeline, "usrsctp STATS: rdata %4u, sdata %6u, rtxdata %3u, "

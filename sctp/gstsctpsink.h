@@ -54,6 +54,7 @@ struct _GstSctpSink
   struct sockaddr *addrs;
 
   struct socket *sock;
+  gboolean  socket_open;
   /* our sockets */
   /* GSocket   *used_socket; */
   /* GInetSocketAddress *addr; */
