@@ -11,7 +11,7 @@ This repo contains a GStreamer SCTP Plugin containing the following two pipeline
 **sctpsrc**
 **sctpsink**
 
-The implementation uses: [libusrsctp](github.com/sctplab/usrsctp)
+The implementation uses: [libusrsctp](https://github.com/sctplab/usrsctp)
 
 # Build // Install
 
