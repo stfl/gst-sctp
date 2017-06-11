@@ -14,34 +14,51 @@
 #include <arpa/inet.h>
 #include <usrsctp.h>
 
-#include "gstsctpsrc.h"
+#include "gstsctputils.h"
 
-/* GST_DEBUG_CATEGORY_STATIC(gst_sctputils_debug_category);
- *
- * #define GST_CAT_DEFAULT gst_sctputils_debug_category
- *
- * G_DEFINE_TYPE_WITH_CODE (GstSctpUtils, gst_sctputils, GST_TYPE_BASE_SRC,
- *       GST_DEBUG_CATEGORY_INIT (gst_sctputils_debug_category, "sctputils",
- *          GST_DEBUG_BG_GREEN | GST_DEBUG_FG_RED | GST_DEBUG_BOLD,
- *          "debug category for sctpsink element")); */
+#define GST_CAT_LEVEL_LOG(cat,level,object,...) G_STMT_START{		\
+  if (G_UNLIKELY ((level) <= GST_LEVEL_MAX && (level) <= _gst_debug_min)) {						\
+    gst_debug_log ((cat), (level), __FILE__, GST_FUNCTION, __LINE__,	\
+        (GObject *) (object), __VA_ARGS__);				\
+  }									\
+}G_STMT_END
 
-void
-usrsctp_debug_printf(const char *format, ...)
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_USRSCTP);
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_SCTPUTILS);
+
+void gst_set_sctp_debug(){
+   GST_DEBUG_CATEGORY_INIT (GST_CAT_USRSCTP, "usrsctp",
+         GST_DEBUG_FG_GREEN,
+         "usrsctp");
+
+   GST_DEBUG_CATEGORY_INIT (GST_CAT_SCTPUTILS, "sctputils",
+         GST_DEBUG_FG_MAGENTA,
+         "sctputils");
+
+#ifdef SCTP_DEBUG
+   usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);
+#endif
+}
+
+void usrsctp_debug_printf(const char *format, ...)
 {
    va_list ap;
    gchar *out;
 
    va_start(ap, format);
    out = gst_info_strdup_vprintf(format, ap);
-   /* vprintf(format, ap); */
+   /* if (G_UNLIKELY ((GST_LEVEL_DEBUG) <= GST_LEVEL_MAX && (GST_LEVEL_DEBUG) <= _gst_debug_min)) {
+    *    gst_debug_log_valist (GST_CAT_USRSCTP, GST_LEVEL_DEBUG, "", "", 0, NULL,
+    *          format, ap);
+    * } */
    va_end(ap);
 
    out[strcspn(out, "\n")] = '\0';
-   GST_DEBUG("%s", out);
+   GST_CAT_DEBUG(GST_CAT_USRSCTP,"%s", out);
    g_free(out);
 }
 
-void hexDump (char *desc, void *addr, int len) {
+GST_EXPORT void hexDump (char *desc, void *addr, int len) {
     int i;
     unsigned char buff[17];
     unsigned char *pc = (unsigned char*)addr;
@@ -93,4 +110,56 @@ void hexDump (char *desc, void *addr, int len) {
     printf ("  %s\n", buff);
 }
 
+GST_EXPORT void print_rtp_header (GstElement *obj, unsigned char *buffer) {
+   RTPHeader *rtph = (RTPHeader *)buffer;
+   GST_CAT_DEBUG_OBJECT(GST_CAT_SCTPUTILS, obj,
+         "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u PT:%u, Seq:%5u, TS:%10u, ssrc:%9u",
+         rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
+         rtph->seq_num, ntohl(rtph->TS), rtph->ssrc);
+}
 
+int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str) {
+   struct sockaddr *addr;
+   addr = addrs;
+   for (int i = 0; i < n; i++) {
+      if (i > 0) {
+         g_string_append(str, ", ");
+      }
+      switch (addr->sa_family) {
+         case AF_INET:
+            {
+               struct sockaddr_in *sin;
+               char buf[INET_ADDRSTRLEN];
+               const char *name;
+
+               sin = (struct sockaddr_in *)addr;
+               name = inet_ntop(AF_INET, &sin->sin_addr, buf, INET_ADDRSTRLEN);
+               g_string_append(str, name);
+#ifndef HAVE_SA_LEN
+               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in));
+#endif
+               break;
+            }
+         case AF_INET6:
+            {
+               struct sockaddr_in6 *sin6;
+               char buf[INET6_ADDRSTRLEN];
+               const char *name;
+
+               sin6 = (struct sockaddr_in6 *)addr;
+               name = inet_ntop(AF_INET6, &sin6->sin6_addr, buf, INET6_ADDRSTRLEN);
+               g_string_append(str, name);
+#ifndef HAVE_SA_LEN
+               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in6));
+#endif
+               break;
+            }
+         default:
+            break;
+      }
+#ifdef HAVE_SA_LEN
+      addr = (struct sockaddr *)((caddr_t)addr + addr->sa_len);
+#endif
+   }
+   return str->len;
+}

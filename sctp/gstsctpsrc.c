@@ -35,9 +35,9 @@
 #endif
 
 #include "gstsctpsrc.h"
-#include "gstsctputils.h"
 #include <gst/base/gstpushsrc.h>
 #include <gst/gst.h>
+#include "gstsctputils.h"
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -113,8 +113,6 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf);
 
 /* static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
  *                               size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info); */
-
-static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer);
 
 enum {
    PROP_0,
@@ -405,10 +403,16 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 
    usrsctp_init(sctpsrc->udp_encaps ? sctpsrc->udp_encaps_port_local : 0, NULL,
                 usrsctp_debug_printf);
-#ifdef SCTP_DEBUG
-   usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);
-#endif
+
+   /* set debugging for usrsctp and define debug category */
+   gst_set_sctp_debug();
+
    usrsctp_sysctl_set_sctp_blackhole(2);
+   usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
+   usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
+   usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
+   usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
+   /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
 
    /* if ((sctpsrc->sock = usrsctp_socket(AF_INET6, SOCK_SEQPACKET, IPPROTO_SCTP, */
    /* sctpsrc_receive_cb, NULL, 0, NULL)) == NULL) { */
@@ -469,8 +473,13 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       }
    }
 
-   /* define address for bind */
+   // disable any Nagle-like algorithms
+   if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_NODELAY,
+            (const void *)&(int){1}, (socklen_t)sizeof(int)) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_NODELAY");
+   }
 
+   /* define address for bind */
    memset((void *)&addr, 0, sizeof(struct sockaddr_in));
    addr.sin_family = AF_INET;
    addr.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
@@ -617,13 +626,19 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
    if (n > 0) {
       if (flags & MSG_NOTIFICATION) {
          union sctp_notification *sn = (union sctp_notification *)map.data;
-         GST_TRACE_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
-                          sn->sn_header.sn_type, (unsigned long long)n);
          switch (sn->sn_header.sn_type) {
             case SCTP_SHUTDOWN_EVENT:
                GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
-               gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc));
+               /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
                return GST_FLOW_EOS;
+            case SCTP_REMOTE_ERROR:
+               GST_INFO_OBJECT(sctpsrc, "Remote error received");
+               /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
+               return GST_FLOW_EOS;
+            default:
+               GST_TRACE_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
+                     sn->sn_header.sn_type, (unsigned long long)n);
+               break;
          }
       } else {
          if (infotype == SCTP_RECVV_RCVINFO) {
@@ -640,7 +655,7 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
                              inet_ntop(AF_INET6, &from.sin6_addr, name, INET6_ADDRSTRLEN),
                              ntohs(from.sin6_port), (flags & MSG_EOR) ? 1 : 0);
          }
-         print_rtp_header(sctpsrc, map.data);
+         print_rtp_header((GstElement *)sctpsrc, map.data);
       }
    } else {
       GST_WARNING_OBJECT(sctpsrc, "GST_FLOW_EOS");
@@ -745,12 +760,5 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
  *    }
  *    return (1);
  * } */
-
-static void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer) {
-   RTPHeader *rtph = (RTPHeader *)buffer;
-   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u, PT:%3u, Seq:%5u, TS:%5u, ssrc:%9u",
-          rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
-          rtph->seq_num, rtph->TS, rtph->ssrc);
-}
 
 // vim: ft=c

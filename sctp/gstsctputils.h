@@ -5,10 +5,11 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+GST_EXPORT void hexDump (char *desc, void *addr, int len);
+GST_EXPORT void gst_set_sctp_debug(void);
+void print_rtp_header (GstElement *obj, unsigned char *buffer);
+int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str);
 void usrsctp_debug_printf(const char *format, ...);
-void hexDump (char *desc, void *addr, int len);
-/* void print_rtp_header (GstSctpSrc *obj, unsigned char *buffer); */
-
 
 #ifdef __WIN32__
 #define PACKED

@@ -36,6 +36,7 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstbasesink.h>
+
 #include "gstsctpsink.h"
 #include "gstsctputils.h"
 
@@ -57,24 +58,30 @@ int done = 0;
 GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsink_debug_category
 
-#define SCTP_DEFAULT_HOST                   "localhost"
-#define SCTP_DEFAULT_PORT                   1117
-#define SCTP_DEFAULT_SRC_PORT               4455
-#define SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE 9989
-#define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL  9988
-#define SCTP_DEFAULT_UDP_ENCAPS             FALSE
-
-
 // paths definition
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "11.1.1.1"
-#define  SCTP_DEFAULT_DEST_PORT_PRIMARY    1111
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "11.1.1.2"
-#define  SCTP_DEFAULT_SRC_PORT_PRIMARY     2221
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "11.1.1.1"
+#define  SCTP_DEFAULT_DEST_PORT_PRIMARY       1111
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "11.1.1.2"
+#define  SCTP_DEFAULT_SRC_PORT_PRIMARY        2221
 
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.1"
-#define  SCTP_DEFAULT_DEST_PORT_SECONDARY  1112
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.1.1.2"
-#define  SCTP_DEFAULT_SRC_PORT_SECONDARY   2222
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "12.1.1.1"
+#define  SCTP_DEFAULT_DEST_PORT_SECONDARY     1112
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "12.1.1.2"
+#define  SCTP_DEFAULT_SRC_PORT_SECONDARY      2222
+
+#define  SCTP_DEFAULT_PR_POLICY               SCTP_PR_SCTP_TTL
+#define  SCTP_DEFAULT_PR_VALUE                80  // ms
+
+#define  SCTP_DEFAULT_UNORDED                 TRUE
+
+// FIXME this is depricated
+#define  SCTP_DEFAULT_HOST                    "localhost"
+#define  SCTP_DEFAULT_PORT                    1117
+#define  SCTP_DEFAULT_SRC_PORT                4455
+
+#define  SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE  9989
+#define  SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL   9988
+#define  SCTP_DEFAULT_UDP_ENCAPS              FALSE
 
 #define SCTP_PPID       99
 #define SCTP_SID        1
@@ -120,15 +127,13 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
 /* static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data); */
 /* static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data); */
 
-static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer);
-static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str);
+/* static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer); */
 static gboolean stats_timer (gpointer priv);
 
 /* usrsctp functions */
 
 static int usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, size_t
       datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info);
-void usrsctp_debug_printf(const char *format, ...);
 
 /* pad templates */
 static GstStaticPadTemplate gst_sctpsink_sink_template =
@@ -229,6 +234,11 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
    sctpsink->udp_encaps = SCTP_DEFAULT_UDP_ENCAPS;
    sctpsink->udp_encaps_port_local = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
    sctpsink->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
+
+   sctpsink->unordered = SCTP_DEFAULT_UNORDED;
+
+   sctpsink->pr_policy = SCTP_DEFAULT_PR_POLICY;
+   sctpsink->pr_value = SCTP_DEFAULT_PR_VALUE;
 }
 
 void
@@ -449,26 +459,34 @@ gst_sctpsink_start (GstBaseSink * sink)
    /* struct sctp_udpencaps encaps; */
    /* char buffer[80]; */
    int n;
-
    GString *addr_string;
 
-   /* if (argc > 4) { */
-   /*    usrsctp_init(atoi(argv[4]), NULL, usrsctp_debug_printf); */
-   /* } else { */
    // FIXME udp encapsulation?
    /* usrsctp_init(9899, NULL, usrsctp_debug_printf); */
-   usrsctp_init(0, NULL, usrsctp_debug_printf);
-   /* } */
-#ifdef SCTP_DEBUG
-   usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);
-#endif
+   usrsctp_init(sctpsink->udp_encaps ? sctpsink->udp_encaps_port_local : 0, NULL,
+                usrsctp_debug_printf);
+
+   gst_set_sctp_debug();
+
    usrsctp_sysctl_set_sctp_blackhole(2);
+   usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
+   usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
+   usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
+   usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
+   /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
+   /* sctp_path_pf_threshold */ /* leave potentially failed state disabled for now */
+
+   /* CMT Options */
+
+   /* sctp_cmt_on_off */
+   /* sctp_buffer_splitting */
+
    if ((sctpsink->sock = usrsctp_socket(AF_INET6, SOCK_STREAM, IPPROTO_SCTP,
                usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
-   /* if (sctpsink->src_port) {  // with given source port */
 
+   /* if (sctpsink->src_port) {  // with given source port */
       memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
       addr4.sin_family = AF_INET;
       addr4.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
@@ -481,30 +499,8 @@ gst_sctpsink_start (GstBaseSink * sink)
          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
       }
 
-/*       memset((void *)&addr6, 0, sizeof(struct sockaddr_in6)); */
-/* #ifdef HAVE_SIN6_LEN */
-/*       addr6.sin6_len = sizeof(struct sockaddr_in6); */
-/* #endif */
-/*       addr6.sin6_family = AF_INET6; */
-/*       addr6.sin6_port = htons( sctpsink->src_port ); */
-/*       addr6.sin6_addr = in6addr_any; */
-/*       GST_TRACE_OBJECT(sctpsink, "binding"); */
-/*       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) { */
-/*          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind"); */
-/*       } */
-/*       memset((void *)&addr6, 0, sizeof(struct sockaddr_in6));
- * #ifdef HAVE_SIN6_LEN
- *       addr6.sin6_len = sizeof(struct sockaddr_in6);
- * #endif
- *       addr6.sin6_family = AF_INET6;
- *       addr6.sin6_port = htons( sctpsink->src_port );
- *       addr6.sin6_addr = in6addr_any;
- *       GST_TRACE_OBJECT(sctpsink, "binding");
- *       if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
- *          GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
- *       } */
-   /* } */
-   /* if (argc > 5) { // with udp encapsulation
+      /************ SCTP Options *****************/
+   /* if (argc > 5) { // udp encapsulation
     *    memset(&encaps, 0, sizeof(struct sctp_udpencaps));
     *    encaps.sue_address.ss_family = AF_INET6;
     *    encaps.sue_port = htons(atoi(argv[5]));
@@ -526,11 +522,27 @@ gst_sctpsink_start (GstBaseSink * sink)
    event.se_on       = 1;
    for (int i = 0; i < (unsigned int)(sizeof(event_types) / sizeof(uint16_t)); i++) {
       event.se_type = event_types[i];
-      if (usrsctp_setsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_EVENT, &event,
-               sizeof(struct sctp_event)) < 0) {
+      if (usrsctp_setsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_EVENT,
+               &event, sizeof(struct sctp_event)) < 0) {
          GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SCTP_EVENT");
       }
    }
+
+   // disable any Nagle-like algorithms
+   if (usrsctp_setsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_NODELAY,
+            (const void *)&(int){1}, (socklen_t)sizeof(int)) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SCTP_NODELAY");
+   }
+
+   /* also possible with socket option including time and frequency
+      * 8.1.19.  Get or Set Delayed SACK Timer (SCTP_DELAYED_SACK)
+      * https://tools.ietf.org/html/rfc6458#section-8.1.19 */
+
+
+   // SCTP_MAXSEG > 0    == fragmentation is not limited.. and definde by pmtu
+
+
+
 
    // clear the addresses again
    memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
@@ -731,49 +743,64 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
    gst_buffer_map (buffer, &map, GST_MAP_READ);
    GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%4lu", gst_buffer_get_size(buffer));
 
-   struct sctp_sndinfo snd_info;
+   struct sctp_sendv_spa spa;
+   memset(&spa, 0, sizeof(struct sctp_sendv_spa));
+   /* struct sctp_sndinfo snd_info; */
 
-   snd_info.snd_sid = SCTP_SID;
-   snd_info.snd_flags = SCTP_UNORDERED;
-   snd_info.snd_ppid = htonl(SCTP_PPID);
-   snd_info.snd_context = 0;
-   snd_info.snd_assoc_id = SCTP_ASSOC_ID;
+   spa.sendv_sndinfo.snd_sid = SCTP_SID;
+   if (sctpsink->unordered)
+      spa.sendv_sndinfo.snd_flags = SCTP_UNORDERED;
+   spa.sendv_sndinfo.snd_ppid = htonl(SCTP_PPID);
+   spa.sendv_sndinfo.snd_assoc_id = SCTP_ASSOC_ID;
+   spa.sendv_flags = SCTP_SEND_SNDINFO_VALID;
 
-   if (usrsctp_sendv(sctpsink->sock, map.data, gst_buffer_get_size(buffer),
-         NULL, 0, // struct sockaddr *addr
-         (void *)&snd_info, sizeof(struct sctp_sndinfo),
-         SCTP_SENDV_SNDINFO, 0) < 0) {
-      GST_ERROR_OBJECT(sctpsink, "usrsctp_sendv failed: %s", strerror(errno));
-      gst_sctpsink_stop((GstBaseSink *)sctpsink);
+   if ((sctpsink->pr_policy == SCTP_PR_SCTP_TTL) ||
+       (sctpsink->pr_policy == SCTP_PR_SCTP_RTX)) {
+      spa.sendv_prinfo.pr_policy = sctpsink->pr_policy;
+      spa.sendv_prinfo.pr_value = sctpsink->pr_value;
+      spa.sendv_flags |= SCTP_SEND_PRINFO_VALID;
    }
 
-   print_rtp_header(sctpsink, map.data);
+   /* FIXME SCTP_SACK_IMMEDIATELY in the snd_flags field of the struct sctp_sndinfo */
+   /* spa.sendv_sndinfo.snd_flags |= SCTP_SACK_IMMEDIATELY; */
+
+   if (usrsctp_sendv(sctpsink->sock,
+            map.data, gst_buffer_get_size(buffer),
+            NULL, 0,
+            &spa, (socklen_t)sizeof(struct sctp_sendv_spa),
+            SCTP_SENDV_SPA, 0) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_sendv failed: %s", strerror(errno));
+      /* gst_sctpsink_stop((GstBaseSink *)sctpsink); */
+      // FIXME sometimes the resource is unavailable
+   }
+
+   print_rtp_header((GstElement *)sctpsink, map.data);
    gst_buffer_unmap (buffer, &map);
 
    return GST_FLOW_OK;
 }
 
 /** Render a BufferList */
-/* static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list) { */
-   /* GstSctpSink *sctpsink = GST_SCTPSINK (sink); */
-/*  */
-/*    GstBuffer *buf; */
-/*    guint size = 0; */
-/*  */
-/*    gst_buffer_list_foreach (buffer_list, buffer_list_calc_size, &size); */
-/*    GST_LOG_OBJECT (sink, "total size of buffer list %p: %u", buffer_list, size); */
-/*  */
-   /* copy all buffers in the list into one single buffer, so we can use
-    * the normal render function (FIXME: optimise to avoid the memcpy) */
-/*    buf = gst_buffer_new (); */
-/*    gst_buffer_list_foreach (buffer_list, buffer_list_copy_data, buf); */
-/*    g_assert (gst_buffer_get_size (buf) == size); */
-/*  */
-/*    gst_sctpsink_render (sink, buf); */
-/*    gst_buffer_unref (buf); */
-/*  */
-/*    return GST_FLOW_OK; */
-/* } */
+/* static GstFlowReturn gst_sctpsink_render_list (GstBaseSink * sink, GstBufferList * buffer_list) {
+ *    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
+ *
+ *    GstBuffer *buf;
+ *    guint size = 0;
+ *
+ *    gst_buffer_list_foreach (buffer_list, buffer_list_calc_size, &size);
+ *    GST_LOG_OBJECT (sink, "total size of buffer list %p: %u", buffer_list, size);
+ *
+ *    copy all buffers in the list into one single buffer, so we can use
+ *    the normal render function (FIXME: optimise to avoid the memcpy)
+ *    buf = gst_buffer_new ();
+ *    gst_buffer_list_foreach (buffer_list, buffer_list_copy_data, buf);
+ *    g_assert (gst_buffer_get_size (buf) == size);
+ *
+ *    gst_sctpsink_render (sink, buf);
+ *    gst_buffer_unref (buf);
+ *
+ *    return GST_FLOW_OK;
+ * } */
 
 /* static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data) {
  *   guint *p_size = data;
@@ -817,59 +844,6 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
  *
  *    return TRUE;
  * } */
-
-static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer) {
-   RTPHeader *rtph = (RTPHeader *)buffer;
-   GST_TRACE_OBJECT(obj, "RTPHeader: V:%u, P:%u, X:%u, CC:%u, M:%u PT:%u, Seq:%5u, TS:%10u, ssrc:%9u",
-          rtph->version, rtph->P, rtph->X, rtph->CC, rtph->M, rtph->PT,
-          rtph->seq_num, ntohl(rtph->TS), rtph->ssrc);
-}
-
-static int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str) {
-   struct sockaddr *addr;
-   addr = addrs;
-   for (int i = 0; i < n; i++) {
-      if (i > 0) {
-         g_string_append(str, ", ");
-      }
-      switch (addr->sa_family) {
-         case AF_INET:
-            {
-               struct sockaddr_in *sin;
-               char buf[INET_ADDRSTRLEN];
-               const char *name;
-
-               sin = (struct sockaddr_in *)addr;
-               name = inet_ntop(AF_INET, &sin->sin_addr, buf, INET_ADDRSTRLEN);
-               g_string_append(str, name);
-#ifndef HAVE_SA_LEN
-               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in));
-#endif
-               break;
-            }
-         case AF_INET6:
-            {
-               struct sockaddr_in6 *sin6;
-               char buf[INET6_ADDRSTRLEN];
-               const char *name;
-
-               sin6 = (struct sockaddr_in6 *)addr;
-               name = inet_ntop(AF_INET6, &sin6->sin6_addr, buf, INET6_ADDRSTRLEN);
-               g_string_append(str, name);
-#ifndef HAVE_SA_LEN
-               addr = (struct sockaddr *)((caddr_t)addr + sizeof(struct sockaddr_in6));
-#endif
-               break;
-            }
-         default:
-            break;
-      }
-#ifdef HAVE_SA_LEN
-      addr = (struct sockaddr *)((caddr_t)addr + addr->sa_len);
-#endif
-   }
-   return str->len;
-}
 
 static gboolean stats_timer (gpointer priv) {
    GstSctpSink *sctpsink = (GstSctpSink *)priv;

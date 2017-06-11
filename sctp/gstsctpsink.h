@@ -51,6 +51,11 @@ struct _GstSctpSink
   gint      udp_encaps_port_local;
   gint      udp_encaps_port_remote;
 
+  gboolean unordered;
+
+  gint   pr_policy;
+  gint   pr_value;
+
   struct sockaddr *addrs;
 
   struct socket *sock;
