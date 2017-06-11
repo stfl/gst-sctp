@@ -6,9 +6,10 @@ LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
 
 dot_dir_default=${PROJECT_DIR}/dot
 gst_debug_default=""
+default_variant="single"
 
 usage() {
-   echo "usage: run [-fbuvR] [--dot [dir]] binary"
+   echo "usage: run [-fbuvR] [--dot [dir]] binary -V variant"
    exit 1
 }
 
@@ -16,7 +17,7 @@ zshexit() {
    [[ ! ${+verbose[1]} ]] && set +x
 } 
 
-zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir
+zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir V:=variant
 
 [[ $# < 1 ]] && norun[1]=1
 (( ${+verbose[1]} )) && set -x
@@ -75,5 +76,5 @@ if (( ${+dot_dir[1]} )); then
 fi
 
 # run sender
-sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} ${~BIN} 2>&1
+sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} ${~BIN} --variant ${variant[2]:-$default_variant} 2>&1
 

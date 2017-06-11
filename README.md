@@ -1,9 +1,17 @@
-GStreamer SCTP Plugin
+This is the experimentation test pad for my master thesis.
+
+The thesis focuses on the improvement of real-time multimedia streaming to minimize delay while
+improving the failure resilience through using multi homed endpoints.
+The improvements through a newly developed transmission scheme on transport layer are evaluated. For
+this an extension to the transport layer protocol SCTP is developed.
+ 
+
+This repo contains a GStreamer SCTP Plugin containing the following two pipeline elements.
 
 **sctpsrc**
 **sctpsink**
 
-depends on: libusrsctp github.com/sctplab/usrsctp
+The implementation uses: [libusrsctp](github.com/sctplab/usrsctp)
 
 # Build // Install
 
@@ -41,7 +49,14 @@ The GST_DEBUG string can be specified with `-d`
 the run script offers the options to build the project `-d`, build usersctp `-u`, fetch from
 upstream `-f` and so on..
 `--dot [dir]` to output the .dot files when the pipeline enters playing state
+-V variant to set the pipeline variant
 
+**Available Variants**
+- (udp)    UDP
+- (single) SCTP Single homed
+- (cmt)    SCTP CMT with Buffer Splitting
+- (dupl)   SCTP where frames are duplicated to both paths to increase path failure resilience
+- (dpr)    SCTP Deadline Based Preventive Retransmission (DPR)
 
 Run directly:
 
@@ -71,7 +86,7 @@ briefly:
 two VMs with network interfaces like this
 
 ```sh
-11.1.1.1  <--->  11.1.1.2
-12.1.1.1  <--->  12.1.1.2
+11.1.1.1:1111  <--->  11.1.1.2:2221
+12.1.1.1:1112  <--->  12.1.1.2:2222
 ```
 

@@ -1,5 +1,5 @@
 /* _GstRtpSctpSender
- * Copyright (C) 2016 FIXME <fixme@example.com>
+ * Copyright (C) 2017 Stefan Lendl <ste.lendl@gmail.com>
  * Copyright (C) 2010 Entropy Wave Inc
  *
  * Redistribution and use in source and binary forms, with or without
@@ -29,6 +29,7 @@
 #include <glib.h>
 
 #include <usrsctp.h>
+#include <string.h>
 
 #define GETTEXT_PACKAGE "RtpSctpSender"
 
@@ -63,13 +64,23 @@ static gboolean gst_RtpSctpSender_handle_message (GstBus *bus,
 static gboolean stats_timer (gpointer priv);
 
 
+enum PipelineVariant {
+   PIPELINE_UDP,           // 0
+   PIPELINE_SINGLE,        // 1
+   PIPELINE_CMT,           // 2
+   PIPELINE_CMT_DUP,       // 3
+   PIPELINE_CMT_DPR,       // 4
+};
+
 gboolean verbose;
+gchar *variant_string = "single"; // set a default
+enum PipelineVariant variant;
 
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
-
+   {"variant", 'V', 0, G_OPTION_ARG_STRING, &variant_string,
+      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dbr " },
    {NULL}
-
 };
 
 int
@@ -80,13 +91,29 @@ main (int argc, char *argv[])
    _GstRtpSctpSender *RtpSctpSender;
    GMainLoop *main_loop;
 
-   context = g_option_context_new ("- FIXME");
+   context = g_option_context_new ("- RTP SCTP Sender");
    g_option_context_add_main_entries (context, entries, GETTEXT_PACKAGE);
    g_option_context_add_group (context, gst_init_get_option_group ());
    if (!g_option_context_parse (context, &argc, &argv, &error)) {
       g_print ("option parsing failed: %s\n", error->message);
+      g_clear_error (&error);
       exit (1);
    }
+
+   if (0 == strncmp(variant_string, "udp", 10)){
+      variant = PIPELINE_UDP;
+   } else if (0 == strncmp(variant_string, "single", 10)){
+      variant = PIPELINE_SINGLE;
+   } else if (0 == strncmp(variant_string, "cmt", 10)){
+      variant = PIPELINE_CMT;
+   } else if (0 == strncmp(variant_string, "dupl", 10)){
+      variant = PIPELINE_CMT_DUP;
+   } else if (0 == strncmp(variant_string, "dbr", 10)){
+      variant = PIPELINE_CMT_DPR;
+   } else {
+      g_error("unknown variant: %s\n", variant_string);
+   }
+
    g_option_context_free (context);
 
    GST_DEBUG_CATEGORY_INIT (rtpsctpsend, "rtpsctpsend",
@@ -94,7 +121,7 @@ main (int argc, char *argv[])
          "The RTP over SCTP Sender Pipeline");
 
    RtpSctpSender = gst_RtpSctpSender_new ();
-      gst_RtpSctpSender_create_pipeline (RtpSctpSender);
+   gst_RtpSctpSender_create_pipeline (RtpSctpSender);
 
    gst_RtpSctpSender_start (RtpSctpSender);
 
