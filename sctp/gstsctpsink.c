@@ -73,6 +73,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_PR_VALUE                80  // ms
 
 #define  SCTP_DEFAULT_UNORDED                 TRUE
+#define  SCTP_DEFAULT_NR_SACK                 TRUE
 
 // FIXME this is depricated
 #define  SCTP_DEFAULT_HOST                    "localhost"
@@ -82,6 +83,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE  9989
 #define  SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL   9988
 #define  SCTP_DEFAULT_UDP_ENCAPS              FALSE
+
+#define  SCTP_DEFAULT_BS                      FALSE
+#define  SCTP_DEFAULT_CMT                     FALSE
+#define  SCTP_DEFAULT_DUPL_POLICY             "off"
 
 #define SCTP_PPID       99
 #define SCTP_SID        1
@@ -97,6 +102,12 @@ enum
    PROP_UDP_ENCAPS_PORT_REMOTE,
    PROP_UDP_ENCAPS_PORT_LOCAL,
    PROP_USRSCTP_STATS,
+   PROP_PR,
+   PROP_PR_VALUE,
+   PROP_UNORDERED,
+   PROP_CMT,
+   PROP_BS,
+   PROP_DUPL_POLICY,
    /* FILL ME */
 };
 
@@ -181,17 +192,17 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
    base_sink_class->render = gst_sctpsink_render;
    /* base_sink_class->render_list = gst_sctpsink_render_list; */
 
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_HOST,
+   g_object_class_install_property (gobject_class, PROP_HOST,
          g_param_spec_string ("host", "Host",
             "The host/IP of the endpoint send the packets to. The other side must be running",
             SCTP_DEFAULT_HOST, G_PARAM_READWRITE));
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_PORT,
+   g_object_class_install_property (gobject_class, PROP_PORT,
          g_param_spec_int ("port", "Port",
             "The port to send the packets to",
             0, 65535, SCTP_DEFAULT_PORT,
             G_PARAM_READWRITE));
 
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_SRC_PORT,
+   g_object_class_install_property (gobject_class, PROP_SRC_PORT,
          g_param_spec_int ("src-port", "Source Port",
             "The port to bind the socket to",
             0, 65535, SCTP_DEFAULT_SRC_PORT,
@@ -201,20 +212,33 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
          g_param_spec_boolean ("udp-encaps", "UDP encapsulation",
             "Enable UDP encapsulation",
             SCTP_DEFAULT_UDP_ENCAPS, G_PARAM_READWRITE));
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_UDP_ENCAPS_PORT_REMOTE,
+   g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_REMOTE,
          g_param_spec_int ("udp-encaps-port-remote", "remote UDP encapuslation port",
             "The remote (destnation) port used with UDP encapsulate",
             0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE,
             G_PARAM_READWRITE));
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_UDP_ENCAPS_PORT_LOCAL,
+   g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_LOCAL,
          g_param_spec_int ("udp-encaps-port-local",  "local UDP encapuslation port",
             "The local (source) port used with UDP encapsulate",
             0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL,
             G_PARAM_READWRITE));
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_USRSCTP_STATS,
+   g_object_class_install_property (gobject_class, PROP_USRSCTP_STATS,
          g_param_spec_pointer ("usrsctp-stats",  "usrsctp stats",
             "Stats (struct sctpstat *) provided by libusrsctp",
             G_PARAM_READABLE));
+
+   g_object_class_install_property (gobject_class, PROP_CMT,
+         g_param_spec_boolean ("cmt", "CMT",
+            "enable Concurrent Multipath Transmission",
+            SCTP_DEFAULT_CMT, G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_BS,
+         g_param_spec_boolean ("buffer-split", "BS",
+            "enable buffer splitting for CMT",
+            SCTP_DEFAULT_BS, G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_DUPL_POLICY,
+         g_param_spec_string  ("duplication-policy", "duplication policy",
+            "enable how packets are duplicated onto all pahts",
+            SCTP_DEFAULT_DUPL_POLICY, G_PARAM_READWRITE));
 
    gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
          "SCTP Sink", "Sink/Network",
@@ -236,6 +260,12 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
    sctpsink->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
 
    sctpsink->unordered = SCTP_DEFAULT_UNORDED;
+   sctpsink->nr_sack = SCTP_DEFAULT_NR_SACK;
+
+   sctpsink->cmt = SCTP_DEFAULT_CMT;
+   sctpsink->bs = SCTP_DEFAULT_BS;
+
+   sctpsink->dupl_policy = g_strdup(SCTP_DEFAULT_DUPL_POLICY);
 
    sctpsink->pr_policy = SCTP_DEFAULT_PR_POLICY;
    sctpsink->pr_value = SCTP_DEFAULT_PR_VALUE;
@@ -253,28 +283,45 @@ gst_sctpsink_set_property (GObject * object, guint property_id,
          host = g_value_get_string (value);
          g_free (sctpsink->host);
          sctpsink->host = g_strdup (host);
-         GST_DEBUG_OBJECT(sctpsink, "set host:%s", sctpsink->host);
+         GST_DEBUG_OBJECT(sctpsink, "set host: %s", sctpsink->host);
          break; }
       case PROP_PORT:
          sctpsink->port = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set port:%d", sctpsink->port);
+         GST_DEBUG_OBJECT(sctpsink, "set port: %d", sctpsink->port);
          break;
       case PROP_SRC_PORT:
          sctpsink->src_port = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set src port:%d", sctpsink->src_port);
+         GST_DEBUG_OBJECT(sctpsink, "set src port: %d", sctpsink->src_port);
          break;
       case PROP_UDP_ENCAPS:
          sctpsink->udp_encaps = g_value_get_boolean (value);
-         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation:%s", sctpsink->udp_encaps ? "TRUE" : "FALSE");
+         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation: %s", sctpsink->udp_encaps ? "TRUE" : "FALSE");
          break;
       case PROP_UDP_ENCAPS_PORT_REMOTE:
          sctpsink->udp_encaps_port_remote = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation port:%d", sctpsink->udp_encaps_port_remote);
+         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation port: %d", sctpsink->udp_encaps_port_remote);
          break;
       case PROP_UDP_ENCAPS_PORT_LOCAL:
          sctpsink->udp_encaps_port_local = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation src port:%d", sctpsink->udp_encaps_port_local);
+         GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation src port: %d", sctpsink->udp_encaps_port_local);
          break;
+
+      case PROP_CMT:
+         sctpsink->cmt = g_value_get_boolean (value);
+         GST_DEBUG_OBJECT(sctpsink, "set CMT: %s", sctpsink->cmt ? "TRUE" : "FALSE");
+         break;
+      case PROP_BS:
+         sctpsink->bs = g_value_get_boolean (value);
+         GST_DEBUG_OBJECT(sctpsink, "set Buffer Split: %s", sctpsink->bs ? "TRUE" : "FALSE");
+         break;
+      case PROP_DUPL_POLICY: {
+         const gchar *dupl_policy;
+         dupl_policy = g_value_get_string (value);
+         g_free (sctpsink->dupl_policy);
+         sctpsink->dupl_policy = g_strdup (dupl_policy);
+         GST_DEBUG_OBJECT(sctpsink, "set duplication policy: %s", sctpsink->dupl_policy);
+         break; }
+
       default:
          G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
          break;
@@ -311,15 +358,24 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
          usrsctp_get_stat(&stats);
          g_value_set_pointer (value, (gpointer *)&stats);
          break; }
+
+      case PROP_CMT:
+         g_value_set_boolean (value, sctpsink->cmt);
+      break;
+      case PROP_BS:
+         g_value_set_boolean (value, sctpsink->bs);
+      break;
+      case PROP_DUPL_POLICY:
+         g_value_set_string (value, sctpsink->dupl_policy);
+         break;
+
       default:
          G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
          break;
    }
 }
 
-void
-gst_sctpsink_dispose (GObject * object)
-{
+void gst_sctpsink_dispose (GObject * object) {
    GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
    GST_DEBUG_OBJECT (sctpsink, "dispose");
@@ -329,15 +385,16 @@ gst_sctpsink_dispose (GObject * object)
    G_OBJECT_CLASS (gst_sctpsink_parent_class)->dispose (object);
 }
 
-void
-gst_sctpsink_finalize (GstSctpSink * sctpsink)
-{
+void gst_sctpsink_finalize (GstSctpSink * sctpsink) {
    GST_DEBUG_OBJECT (sctpsink, "finalize");
 
    // FIXME: null-out all attributes
 
    g_free (sctpsink->host);
    sctpsink->host = NULL;
+
+   g_free (sctpsink->dupl_policy);
+   sctpsink->dupl_policy = NULL;
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -348,9 +405,7 @@ gst_sctpsink_finalize (GstSctpSink * sctpsink)
 }
 
 /* start or stop a pulling thread */
-static gboolean
-gst_sctpsink_activate_pull (GstBaseSink * sink, gboolean active)
-{
+static gboolean gst_sctpsink_activate_pull (GstBaseSink * sink, gboolean active) {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
    GST_DEBUG_OBJECT (sctpsink, "activate_pull");
@@ -471,7 +526,8 @@ gst_sctpsink_start (GstBaseSink * sink)
    usrsctp_sysctl_set_sctp_blackhole(2);
    usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
    usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
-   usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
+   if (sctpsink->nr_sack == TRUE)
+      usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
    usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
    /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
    /* sctp_path_pf_threshold */ /* leave potentially failed state disabled for now */

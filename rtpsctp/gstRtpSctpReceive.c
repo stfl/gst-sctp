@@ -61,6 +61,7 @@ void gst_RtpSctpReceiver_create_pipeline_playbin (GstRtpSctpReceiver *RtpSctpRec
 void gst_RtpSctpReceiver_start (GstRtpSctpReceiver *RtpSctpReceiver);
 void gst_RtpSctpReceiver_stop (GstRtpSctpReceiver *RtpSctpReceiver);
 
+
 static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus, GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
 static gboolean stats_timer (gpointer priv);
@@ -69,7 +70,7 @@ enum PipelineVariant {
    PIPELINE_UDP,           // 0
    PIPELINE_SINGLE,        // 1
    PIPELINE_CMT,           // 2
-   PIPELINE_CMT_DUP,       // 3
+   PIPELINE_CMT_DUPL,       // 3
    PIPELINE_CMT_DPR,       // 4
 };
 
@@ -109,7 +110,7 @@ main (int argc, char *argv[])
    } else if (0 == strncmp(variant_string, "cmt", 10)){
       variant = PIPELINE_CMT;
    } else if (0 == strncmp(variant_string, "dupl", 10)){
-      variant = PIPELINE_CMT_DUP;
+      variant = PIPELINE_CMT_DUPL;
    } else if (0 == strncmp(variant_string, "dbr", 10)){
       variant = PIPELINE_CMT_DPR;
    } else {
@@ -176,21 +177,28 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 
    /* create element */
    GstElement *source = gst_element_factory_make("sctpsrc", "source");
-   g_object_set(G_OBJECT(source),
-         "host",   "11.1.1.1",
-         "port",   1117,
-         NULL);
+   /* g_object_set(G_OBJECT(source),
+    *       "host",   "11.1.1.1",
+    *       "port",   1117,
+    *       NULL); */
+
+   if (variant == PIPELINE_CMT ||
+       variant == PIPELINE_CMT_DPR ||
+       variant == PIPELINE_CMT_DUPL) {
+      gst_util_set_object_arg(G_OBJECT(source), "cmt",  "true");
+      gst_util_set_object_arg(G_OBJECT(source), "buffer-split",  "true");
+   }
 
    GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
          "media",          G_TYPE_STRING,  "video",
-         "clock-rate",     G_TYPE_INT,     90000,
+         "clock-rate",     G_TYPE_INT,      90000,
          "encoding-name",  G_TYPE_STRING,  "RAW",
          "sampling",       G_TYPE_STRING,  "RGBA",
          "depth",          G_TYPE_STRING,  "8",
          "width",          G_TYPE_STRING,  "90",
          "height",         G_TYPE_STRING,  "60",
          "a-framerate",    G_TYPE_STRING,  "24",
-         "payload",        G_TYPE_INT,     96,
+         "payload",        G_TYPE_INT,      96,
          NULL);
 
    GstElement *rtpdepay = gst_element_factory_make("rtpvrawdepay", "rtpdepay");
@@ -204,6 +212,7 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
    GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
+
 
    /* add to pipeline */
    gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, videoconvert, videosink,

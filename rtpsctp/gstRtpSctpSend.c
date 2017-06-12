@@ -68,7 +68,7 @@ enum PipelineVariant {
    PIPELINE_UDP,           // 0
    PIPELINE_SINGLE,        // 1
    PIPELINE_CMT,           // 2
-   PIPELINE_CMT_DUP,       // 3
+   PIPELINE_CMT_DUPL,       // 3
    PIPELINE_CMT_DPR,       // 4
 };
 
@@ -107,7 +107,7 @@ main (int argc, char *argv[])
    } else if (0 == strncmp(variant_string, "cmt", 10)){
       variant = PIPELINE_CMT;
    } else if (0 == strncmp(variant_string, "dupl", 10)){
-      variant = PIPELINE_CMT_DUP;
+      variant = PIPELINE_CMT_DUPL;
    } else if (0 == strncmp(variant_string, "dbr", 10)){
       variant = PIPELINE_CMT_DPR;
    } else {
@@ -181,7 +181,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    GstElement *source = gst_element_factory_make("videotestsrc", "source");
    gst_util_set_object_arg(G_OBJECT(source), "is-live", "true");
    gst_util_set_object_arg(G_OBJECT(source), "pattern", "gradient");
-   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "100");
+   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "40");
 
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
          "format",     G_TYPE_STRING,      "RGBA",
@@ -202,10 +202,41 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    GstElement *queue = gst_element_factory_make("queue2", "queue");
 
    GstElement *sink = gst_element_factory_make("sctpsink", "sink");
-   g_object_set(sink,
-         "host",   "11.1.1.1",
-         "port",    1117,
-         NULL);
+   /* g_object_set(sink, */
+         /* "host",   "11.1.1.1", */
+         /* "port",    1117, */
+         /* NULL); */
+
+
+   /* FIXME not yet implemented >> set statically in the plugin */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "unorderd",  "true"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "nr-sack",  "true"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "pr-policy",  "ttl"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "pr-value",  "80"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "delayed-sack-time",  "30"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "delayed-sack-frequency",  "2"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "heartbeat-interval",  "5000"); */
+
+   gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
+   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-primary",  "1234"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-primary",  "2345"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-secondary",  "4321"); */
+   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-secondary",  "5432"); */
+
+   if (variant == PIPELINE_CMT ||
+       variant == PIPELINE_CMT_DPR ||
+       variant == PIPELINE_CMT_DUPL) {
+      gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
+      gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
+   }
+
+   if (variant == PIPELINE_CMT_DPR) {
+      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dpr");
+   } else if (variant == PIPELINE_CMT_DUPL) {
+      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dupl");
+   } else {
+      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "off");
+   }
 
    /* add to pipeline */
    gst_bin_add_many(GST_BIN(pipeline), source, timeoverlay, rtppay, queue, sink, NULL);

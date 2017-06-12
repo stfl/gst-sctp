@@ -52,6 +52,11 @@ struct _GstSctpSink
   gint      udp_encaps_port_remote;
 
   gboolean unordered;
+  gboolean nr_sack;
+
+  gboolean   cmt;
+  gboolean   bs;
+  gchar     *dupl_policy;
 
   gint   pr_policy;
   gint   pr_value;

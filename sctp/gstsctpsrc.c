@@ -75,6 +75,12 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 
 #define SCTP_DEFAULT_ASSOC_VALUE 47
 
+#define  SCTP_DEFAULT_BS                      FALSE
+#define  SCTP_DEFAULT_CMT                     FALSE
+
+#define  SCTP_DEFAULT_UNORDED                 TRUE
+#define  SCTP_DEFAULT_NR_SACK                 TRUE
+
 /* prototypes */
 
 static void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -125,6 +131,12 @@ enum {
    PROP_USRSCTP_STATS,
    /* PROP_STATS, */
    PROP_PUSHED,
+
+   PROP_PR,
+   PROP_PR_VALUE,
+   PROP_UNORDERED,
+   PROP_CMT,
+   PROP_BS,
    /* FILL ME */
 };
 
@@ -180,41 +192,48 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
    /* push_src_class->alloc = GST_DEBUG_FUNCPTR (gst_sctpsrc_alloc); */
    /* push_src_class->fill = GST_DEBUG_FUNCPTR (gst_sctpsrc_fill); */
 
-   g_object_class_install_property(
-       G_OBJECT_CLASS(klass), PROP_HOST,
+   g_object_class_install_property( gobject_class, PROP_HOST,
        g_param_spec_string("host", "Host", "The host IP address to receive packets from",
                            SCTP_DEFAULT_HOST, G_PARAM_READWRITE));
-   g_object_class_install_property(G_OBJECT_CLASS(klass), PROP_PORT,
+   g_object_class_install_property(gobject_class, PROP_PORT,
                                    g_param_spec_int("port", "Port", "The port packets are received",
                                                     0, 65535, SCTP_DEFAULT_PORT,
                                                     G_PARAM_READWRITE));
 
-   g_object_class_install_property(
-       gobject_class, PROP_UDP_ENCAPS,
+   g_object_class_install_property(gobject_class, PROP_UDP_ENCAPS,
        g_param_spec_boolean("udp-encaps", "UDP encapsulation", "Enable UDP encapsulation",
                             SCTP_DEFAULT_UDP_ENCAPS, G_PARAM_READWRITE));
-   g_object_class_install_property(
-       G_OBJECT_CLASS(klass), PROP_UDP_ENCAPS_PORT_LOCAL,
+   g_object_class_install_property(gobject_class, PROP_UDP_ENCAPS_PORT_LOCAL,
        g_param_spec_int("udp-encaps-port-local", "local UDP encapuslation port",
                         "The local port used with UDP encapsulate", 0, 65535,
                         SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL, G_PARAM_READWRITE));
-   g_object_class_install_property(
-       G_OBJECT_CLASS(klass), PROP_UDP_ENCAPS_PORT_REMOTE,
+   g_object_class_install_property(gobject_class, PROP_UDP_ENCAPS_PORT_REMOTE,
        g_param_spec_int("udp-encaps-port-remote", "remote UDP encapuslation port",
                         "The remote port used with UDP encapsulate", 0, 65535,
                         SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE, G_PARAM_READWRITE));
-   g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_USRSCTP_STATS,
+
+   g_object_class_install_property (gobject_class, PROP_USRSCTP_STATS,
          g_param_spec_pointer ("usrsctp-stats",  "usrsctp stats",
             "Stats (struct sctpstat *) provided by libusrsctp",
             G_PARAM_READABLE));
-   /* g_object_class_install_property (G_OBJECT_CLASS (klass), PROP_STATS,
+   /* g_object_class_install_property (gobject_class, PROP_STATS,
     *       g_param_spec_pointer ("stats",  "stats",
     *          "Stats (struct sctpsrc *)",
     *          G_PARAM_READABLE)); */
-   g_object_class_install_property(
-       G_OBJECT_CLASS(klass), PROP_PUSHED,
+
+   g_object_class_install_property(gobject_class, PROP_PUSHED,
        g_param_spec_uint64("pushed", "packets pushed", "Packets pushed to next element",
           0, G_MAXUINT64, 0, G_PARAM_READABLE));
+
+   g_object_class_install_property (gobject_class, PROP_CMT,
+         g_param_spec_boolean ("cmt", "CMT",
+            "enable Concurrent Multipath Transmission",
+            SCTP_DEFAULT_CMT, G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_BS,
+         g_param_spec_boolean ("buffer-split", "BS",
+            "enable buffer splitting for CMT",
+            SCTP_DEFAULT_BS, G_PARAM_READWRITE));
+
 }
 
 static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
@@ -225,6 +244,12 @@ static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
    sctpsrc->udp_encaps_port_local  = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
    sctpsrc->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
    sctpsrc->pushed                 = 0;
+
+   sctpsrc->nr_sack = SCTP_DEFAULT_NR_SACK;
+   sctpsrc->unordered = SCTP_DEFAULT_UNORDED;
+
+   sctpsrc->cmt = SCTP_DEFAULT_CMT;
+   sctpsrc->bs = SCTP_DEFAULT_BS;
 }
 
 void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -258,6 +283,15 @@ void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *
       GST_DEBUG_OBJECT(sctpsrc, "set UDP encapsulation src port:%d",
                        sctpsrc->udp_encaps_port_local);
       break;
+
+      case PROP_CMT:
+         sctpsrc->cmt = g_value_get_boolean (value);
+         GST_DEBUG_OBJECT(sctpsrc, "set CMT:%s", sctpsrc->cmt ? "TRUE" : "FALSE");
+         break;
+      case PROP_BS:
+         sctpsrc->bs = g_value_get_boolean (value);
+         GST_DEBUG_OBJECT(sctpsrc, "set Buffer Split:%s", sctpsrc->bs ? "TRUE" : "FALSE");
+         break;
    default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
       break;
@@ -294,6 +328,13 @@ void gst_sctpsrc_get_property(GObject *object, guint property_id, GValue *value,
       usrsctp_get_stat(&stats);
       g_value_set_pointer (value, (gpointer *)&stats);
       break; }
+
+      case PROP_CMT:
+         g_value_set_boolean (value, sctpsrc->cmt);
+      break;
+      case PROP_BS:
+         g_value_set_boolean (value, sctpsrc->bs);
+      break;
 
    default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -410,7 +451,8 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    usrsctp_sysctl_set_sctp_blackhole(2);
    usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
    usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
-   usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
+   if (sctpsrc->nr_sack == TRUE)
+      usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
    usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
    /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
 

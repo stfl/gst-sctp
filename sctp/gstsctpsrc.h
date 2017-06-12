@@ -48,6 +48,12 @@ struct _GstSctpSrc {
   gint      udp_encaps_port_local;
   gint      udp_encaps_port_remote;
 
+  gboolean unordered;
+  gboolean nr_sack;
+
+  gboolean cmt;
+  gboolean bs;
+
   struct socket *sock;
   gboolean  socket_open;
 
