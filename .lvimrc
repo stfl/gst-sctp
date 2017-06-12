@@ -2,7 +2,6 @@ let g:neomake_c_enabled_makers = ['clangcheck']
 let g:neomake_c_clangcheck_args = ['%:p',
          \ '-p', g:localvimrc_script_dir.'/build',
          \ ]
-         " 'extra-arg="-Werror -Wall"',
 
 let g:neomake_enabled_makers = ['install', 'ninja', 'clean', 'meson', 'rm']
 let g:neomake_ninja_maker = {
@@ -49,10 +48,15 @@ augroup MyProject
    autocmd BufNewFile,BufRead *.[ch] set filetype=c
    autocmd BufWritePost *.[ch] Neomake! install
    autocmd User NeomakeFinished call OnNeomakeFinished()
+   " autocmd FileType c call SetupDeopleteForCppWithRtags()
 augroup END
 
 function! OnNeomakeFinished()
-   echom "build finished"
+   let context = g:neomake_hook_context
+   if (match(context.jobinfo.maker.name, "install") == 0) && 
+            \ (context.jobinfo.exit_code == 0)
+      echom "build finished successfully!" 
+   endif
 endfunction
 
 " :cnf   > first error in qf
