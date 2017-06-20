@@ -3,7 +3,7 @@ let g:neomake_c_clangcheck_args = ['%:p',
          \ '-p', g:localvimrc_script_dir.'/build',
          \ ]
 
-let g:neomake_enabled_makers = ['install', 'ninja', 'clean', 'meson', 'rm']
+let g:neomake_enabled_makers = ['install', 'ninja', 'clean', 'meson', 'rm', 'usrsctp']
 let g:neomake_ninja_maker = {
          \ 'exe' : 'ninja',
          \ 'cwd' : g:localvimrc_script_dir.'/build',
@@ -33,31 +33,53 @@ let g:neomake_meson_maker = {
          \ 'args' : ['build', '--werror'],
          \ }
 
+let g:neomake_usrsctp_maker = {
+         \ 'exe' : 'cmake',
+         \ 'args': ['--build', g:localvimrc_script_dir.'/usrsctp/build'],
+         \ 'serialize': 1,
+         \ }
+         " \ 'errorformat' : '%-G%f:%s:,%-G%f:%l: %#error: %#(Each undeclared identifier is reported only%.%#,%-G%f:%l: %#error: %#for each function it appears%.%#,%-GIn file included%.%#,%-G %#from %f:%l\,,%f:%l:%c: %trror: %m,%f:%l:%c: %tarning: %m,%I%f:%l:%c: note: %m,%f:%l:%c: %m,%f:%l: %trror: %m,%f:%l: %tarning: %m,%I%f:%l: note: %m,%f:%l: %m'
+
+let g:neomake_serialize_abort_on_error = 1
 
 " add compile_commands.json to deoplete-clang completion
-let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
+" let g:deoplete#sources#clang#clang_complete_database = g:localvimrc_script_dir.'/build'
 
 " nnoremap <c-p> :FZF expand('g:localvimrc_script_dir')<CR>
 
-set foldminlines=4
-set foldnestmax=3
 
 " make vim not confuse cpp/c
 augroup MyProject
    autocmd!
    autocmd BufNewFile,BufRead *.[ch] set filetype=c
-   autocmd BufWritePost *.[ch] Neomake! install
+
+   autocmd BufWritePost */sctp/*.[ch] Neomake! install
+   autocmd BufWritePost */rtp*.[ch] Neomake! install
+
+   autocmd BufWritePost */usrsctp/*.[ch] Neomake! usrsctp
+
    autocmd User NeomakeFinished call OnNeomakeFinished()
-   " autocmd FileType c call SetupDeopleteForCppWithRtags()
 augroup END
 
 function! OnNeomakeFinished()
    let context = g:neomake_hook_context
    if (match(context.jobinfo.maker.name, "install") == 0) && 
             \ (context.jobinfo.exit_code == 0)
-      echom "build finished successfully!" 
+      echom "build gst-sctp finished successfully!" 
+   elseif (match(context.jobinfo.maker.name, "usrsctp") == 0) && 
+            \ (context.jobinfo.exit_code == 0)
+      echom "build usrsctp finished successfully!" 
    endif
 endfunction
+
+" fold preprocessor #ifdef
+nnoremap zn 0zf%
+nnoremap zN 0v2]#zf
+" zd > delete fold
+"
+let g:fastfold_savehook = 0
+let g:fastfold_fdmhook = 0
+set foldnestmax=3
 
 " :cnf   > first error in qf
 " :cn    > quickfix next
