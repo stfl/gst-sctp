@@ -15,18 +15,19 @@ The implementation uses: [libusrsctp](https://github.com/sctplab/usrsctp)
 
 # Build // Install
 
-build **libusrsctp** with cmake
+build **libusrsctp** with cmake/ninja
 
 ```bash
 mkdir usrsctp/build
 cd usrsctp/build/
-cmake ../usrsctplib
-cmake --build .
+cmake -DCMAKE_EXPORT_COMPILE_COMMANDS=1 ../usrsctplib -G Ninja
+ninja
 
-# sudo make install
+# cmake --build .
+# sudo ninja install
 ```
 
-build **examples** with *meson.build* and *ninja*
+build **examples** with *meson.build*/*ninja*
 
 ```bash
 mkdir build
@@ -40,9 +41,9 @@ sudo ninja install
 # Run
 
 ```bash
-./run build/rtpsctp/rtpsctpsend -d "4,basesink:8,gstutils:5,buffer:9,sctpsink:8,videotestsrc:4,textoverlay:8"
+./run build/rtpsctp/rtpsctpsend -d "4,basesink:8,gstutils:5,buffer:9,sctpsink:8,videotestsrc:4,textoverlay:8" -t cmt
 
-./run build/rtpsctp/rtpsctprecv -d "4,gstutils:5,basesrc:8,pushsrc:8,sctpsrc:8,rtpbasedepayload:5,rtpbuffer:9,buffer:9" 
+./run build/rtpsctp/rtpsctprecv -d "4,gstutils:5,basesrc:8,pushsrc:8,sctpsrc:8,rtpbasedepayload:5,rtpbuffer:9,buffer:9"  -t cmt
 ```
 
 The GST_DEBUG string can be specified with `-d`
@@ -83,10 +84,12 @@ dot dot/receiver.dot -Tpng -o dot/reveiver.png
 
 briefly:
 
-two VMs with network interfaces like this
+two VMs with network interfaces like in the following. It has to be one global and one private IP in
+order to make the source IP selection work in usrsctp. This is a limitation in usrsctp in this
+specific setup. UDP encapsulation might help with that.
 
 ```sh
-11.1.1.1:1111  <--->  11.1.1.2:2221
-12.1.1.1:1112  <--->  12.1.1.2:2222
+192.168.0.1  <--->  192.168.0.2
+12.0.0.1     <--->  12.0.0.2
 ```
 

@@ -38,8 +38,13 @@ struct _GstSctpSrc {
   GstBaseSrc base_sctpsrc;
 
   /* properties */
-  gchar     *host;
-  gint       port;
+  gchar *dest_ip;
+  gchar *src_ip;
+  gchar *dest_ip_secondary;
+  gchar *src_ip_secondary;
+  gint dest_port;
+  gint src_port;
+
 
   /* gchar     *peer; */
   /* gint       peer_port; */

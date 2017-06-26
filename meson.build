@@ -175,20 +175,7 @@ glib_deps = [dependency('glib-2.0', version : glib_req),
 
 gst_args = ['-DHAVE_CONFIG_H']
 configinc = include_directories('.')
-# libsinc = include_directories('gst-libs')
 
-
-##### include usrsctp ########
-
-usrsctp_check_headers = [
-    ['HAVE_USRSCTP_H', 'usrsctp.h'],
-    ]
-
-foreach h : check_headers
-  if cc.has_header(h.get(1))
-    cdata.set(h.get(0), 1)
-  endif
-endforeach
 
 #### checking struct members
 ####--------------------------
@@ -232,9 +219,11 @@ configure_file(input : 'config.h.meson',
 
 th_dep = dependency('threads')
 
+##### include usrsctp ########
 usrsctp_build_path = join_paths(meson.source_root(), 'usrsctp/build')
 message('expecting libusrsctp at: ' + usrsctp_build_path)
 usrsctp_dep = cc.find_library('libusrsctp', dirs : usrsctp_build_path)
+usrsctpinc = include_directories('../usrsctp/usrsctplib')
 
 # embedd the library path into the executable > with setuid LD_LIBRARY_PATH doesn't work
 Rargs = ['-R '+usrsctp_build_path ]
@@ -243,9 +232,10 @@ Werror_args = [ # '-Werror', # can also be enabled with meson -werror
                 '-Wno-error=unused-variable',
                 '-Wno-error=unused-function',
                 '-Wno-error=unused-label',
-                '-Wno-error=unused-value' ]
+                '-Wno-error=unused-value',]
+                # '-DSCTP_LTRACE_ERRORS']
 
 subdir('sctp')
-subdir('rtpudp')
+# subdir('rtpudp')
 subdir('rtpsctp')
-subdir('sctpinittest')
+# subdir('sctpinittest')

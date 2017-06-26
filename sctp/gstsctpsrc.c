@@ -49,29 +49,25 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <usrsctp.h>
+#include <netinet/sctp_constants.h>
 
 #define BUFFER_SIZE 10240
 
 GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsrc_debug_category
 
-#define SCTP_DEFAULT_HOST "::"
-#define SCTP_DEFAULT_PORT 1117
+#define SCTP_DEFAULT_UDP_ENCAPS FALSE
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE 9988
 #define SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL 9989
-#define SCTP_DEFAULT_UDP_ENCAPS FALSE
-
 
 /*  PORTS defined for the RECEIVER */
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "11.1.1.2"
-#define  SCTP_DEFAULT_DEST_PORT_PRIMARY    2221
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "11.1.1.1"
-#define  SCTP_DEFAULT_SRC_PORT_PRIMARY     1111
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "192.168.0.2"
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "192.168.0.1"
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.0.0.2"
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.0.0.1"
+#define  SCTP_DEFAULT_DEST_PORT    2222
+#define  SCTP_DEFAULT_SRC_PORT     1111
 
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.1.1.2"
-#define  SCTP_DEFAULT_DEST_PORT_SECONDARY  2222
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.1.1.1"
-#define  SCTP_DEFAULT_SRC_PORT_SECONDARY   1112
 
 #define SCTP_DEFAULT_ASSOC_VALUE 47
 
@@ -81,8 +77,10 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_UNORDED                 TRUE
 #define  SCTP_DEFAULT_NR_SACK                 TRUE
 
-/* prototypes */
+/* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2) */
+#define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
 
+/* prototypes */
 static void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
                                      GParamSpec *pspec);
 static void gst_sctpsrc_get_property(GObject *object, guint property_id, GValue *value,
@@ -192,13 +190,13 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
    /* push_src_class->alloc = GST_DEBUG_FUNCPTR (gst_sctpsrc_alloc); */
    /* push_src_class->fill = GST_DEBUG_FUNCPTR (gst_sctpsrc_fill); */
 
-   g_object_class_install_property( gobject_class, PROP_HOST,
-       g_param_spec_string("host", "Host", "The host IP address to receive packets from",
-                           SCTP_DEFAULT_HOST, G_PARAM_READWRITE));
-   g_object_class_install_property(gobject_class, PROP_PORT,
-                                   g_param_spec_int("port", "Port", "The port packets are received",
-                                                    0, 65535, SCTP_DEFAULT_PORT,
-                                                    G_PARAM_READWRITE));
+   /* g_object_class_install_property( gobject_class, PROP_HOST, */
+   /*     g_param_spec_string("host", "Host", "The host IP address to receive packets from", */
+   /*                         SCTP_DEFAULT_HOST, G_PARAM_READWRITE)); */
+   /* g_object_class_install_property(gobject_class, PROP_PORT, */
+   /*                                 g_param_spec_int("port", "Port", "The port packets are received", */
+   /*                                                  0, 65535, SCTP_DEFAULT_PORT, */
+   /*                                                  G_PARAM_READWRITE)); */
 
    g_object_class_install_property(gobject_class, PROP_UDP_ENCAPS,
        g_param_spec_boolean("udp-encaps", "UDP encapsulation", "Enable UDP encapsulation",
@@ -234,11 +232,12 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
             "enable buffer splitting for CMT",
             SCTP_DEFAULT_BS, G_PARAM_READWRITE));
 
+   gst_usrsctp_debug_init();
 }
 
 static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
-   sctpsrc->host = g_strdup(SCTP_DEFAULT_HOST);
-   sctpsrc->port = SCTP_DEFAULT_PORT;
+   /* sctpsrc->host = g_strdup(SCTP_DEFAULT_HOST); */
+   /* sctpsrc->port = SCTP_DEFAULT_PORT; */
 
    sctpsrc->udp_encaps             = SCTP_DEFAULT_UDP_ENCAPS;
    sctpsrc->udp_encaps_port_local  = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
@@ -250,6 +249,14 @@ static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
 
    sctpsrc->cmt = SCTP_DEFAULT_CMT;
    sctpsrc->bs = SCTP_DEFAULT_BS;
+
+   sctpsrc->dest_ip = g_strdup(SCTP_DEFAULT_DEST_IP_PRIMARY);
+   sctpsrc->dest_port = SCTP_DEFAULT_DEST_PORT;
+   sctpsrc->src_ip = g_strdup(SCTP_DEFAULT_SRC_IP_PRIMARY);
+   sctpsrc->src_port = SCTP_DEFAULT_SRC_PORT;
+
+   sctpsrc->dest_ip_secondary = g_strdup(SCTP_DEFAULT_DEST_IP_SECONDARY);
+   sctpsrc->src_ip_secondary = g_strdup(SCTP_DEFAULT_SRC_IP_SECONDARY);
 }
 
 void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -258,18 +265,6 @@ void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *
    /* GST_DEBUG_OBJECT (sctpsrc, "set_property"); */
 
    switch (property_id) {
-   case PROP_HOST: {
-      const gchar *addr;
-      addr = g_value_get_string(value);
-      g_free(sctpsrc->host);
-      sctpsrc->host = g_strdup(addr);
-      GST_DEBUG_OBJECT(sctpsrc, "set addr:%s", sctpsrc->host);
-      break;
-   }
-   case PROP_PORT:
-      sctpsrc->port = g_value_get_int(value);
-      GST_DEBUG_OBJECT(sctpsrc, "set port:%d", sctpsrc->port);
-      break;
    case PROP_UDP_ENCAPS:
       sctpsrc->udp_encaps = g_value_get_boolean(value);
       GST_DEBUG_OBJECT(sctpsrc, "set UDP encapsulation:%s", sctpsrc->udp_encaps ? "TRUE" : "FALSE");
@@ -304,13 +299,6 @@ void gst_sctpsrc_get_property(GObject *object, guint property_id, GValue *value,
    /* GST_DEBUG_OBJECT (sctpsrc, "get_property"); */
 
    switch (property_id) {
-   case PROP_HOST:
-      g_value_set_string(value, sctpsrc->host);
-      break;
-   case PROP_PORT:
-      g_value_set_int(value, sctpsrc->port);
-      break;
-
    case PROP_UDP_ENCAPS:
       g_value_set_boolean(value, sctpsrc->udp_encaps);
       break;
@@ -359,18 +347,15 @@ void gst_sctpsrc_finalize(GObject *object)
    GST_DEBUG_OBJECT(sctpsrc, "finalize");
 
    // FIXME: null-out all attributes
-   /* if (sctpsrc->cancellable)
-    *   g_object_unref (sctpsrc->cancellable);
-    * sctpsrc->cancellable = NULL;
-    * if (sctpsrc->server_socket)
-    *   g_object_unref (sctpsrc->server_socket);
-    * sctpsrc->server_socket = NULL;
-    * if (sctpsrc->client_socket)
-    *   g_object_unref (sctpsrc->client_socket);
-    * sctpsrc->client_socket = NULL; */
+   g_free (sctpsrc->src_ip);
+   sctpsrc->src_ip = NULL;
+   g_free (sctpsrc->dest_ip);
+   sctpsrc->dest_ip = NULL;
 
-   g_free (sctpsrc->host);
-   sctpsrc->host = NULL;
+   g_free (sctpsrc->src_ip_secondary);
+   sctpsrc->src_ip_secondary = NULL;
+   g_free (sctpsrc->dest_ip_secondary);
+   sctpsrc->dest_ip_secondary = NULL;
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -429,24 +414,17 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
 {
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
 
-   struct sockaddr_in addr;
    struct sctp_udpencaps encaps;
    struct sctp_assoc_value av;
    const int on = 1;
-   /* ssize_t n; */
-   /* int flags; */
-   /* socklen_t from_len; */
-   /* char buffer[BUFFER_SIZE]; */
-   char name[INET_ADDRSTRLEN];
-   /* socklen_t infolen; */
-   /* struct sctp_rcvinfo rcv_info; */
-   /* unsigned int infotype; */
 
    usrsctp_init(sctpsrc->udp_encaps ? sctpsrc->udp_encaps_port_local : 0, NULL,
                 usrsctp_debug_printf);
 
-   /* set debugging for usrsctp and define debug category */
-   gst_set_sctp_debug();
+#ifdef SCTP_DEBUG
+   usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);
+   usrsctp_sysctl_set_sctp_logging_level(SCTP_LTRACE_ERROR_ENABLE|SCTP_LTRACE_CHUNK_ENABLE);
+#endif
 
    usrsctp_sysctl_set_sctp_blackhole(2);
    usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
@@ -521,36 +499,99 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_NODELAY");
    }
 
-   /* define address for bind */
-   memset((void *)&addr, 0, sizeof(struct sockaddr_in));
-   addr.sin_family = AF_INET;
-   addr.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
-   addr.sin_addr.s_addr = inet_addr(SCTP_DEFAULT_SRC_IP_PRIMARY);
-   GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
-                   inet_ntop(AF_INET, &addr.sin_addr, name, INET_ADDRSTRLEN),
-                   ntohs(addr.sin_port));
-   if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in)) < 0) {
-      GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind");
+   struct sockaddr_in addr4[2];
+   memset(&addr4, 0, sizeof(struct sockaddr_in) * 2);
+   addr4[0].sin_family      = addr4[1].sin_family = AF_INET;
+   addr4[0].sin_port        = addr4[1].sin_port = htons(sctpsrc->src_port);
+
+   if (inet_pton(AF_INET, sctpsrc->src_ip, &addr4[0].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsrc, "Illegal source address: %s %s", sctpsrc->src_ip, strerror(errno));
+      return FALSE;
    }
-/*    memset((void *)&addr, 0, sizeof(struct sockaddr_in6));
- * #ifdef HAVE_SIN6_LEN
- *    addr.sin6_len = sizeof(struct sockaddr_in6);
- * #endif
- *    addr.sin6_family = AF_INET6;
- *    addr.sin6_port   = htons(sctpsrc->port);
- *    addr.sin6_addr = in6addr_any;
- *    GST_INFO_OBJECT(sctpsrc, "starting server on: %s:%d",
- *                    inet_ntop(AF_INET6, &addr.sin6_addr, name, INET6_ADDRSTRLEN),
- *                    ntohs(addr.sin6_port));
- *    if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr_in6)) < 0) {
- *       GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind");
+   if (inet_pton(AF_INET, sctpsrc->src_ip_secondary, &addr4[1].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsrc, "Illegal source address: %s %s", sctpsrc->src_ip_secondary, strerror(errno));
+      return FALSE;
+   }
+   /* addr4[0].sin_addr.s_addr        = INADDR_ANY; */
+   GST_DEBUG_OBJECT(sctpsrc, "binding server to: %s, %s port: %d",
+         sctpsrc->src_ip, sctpsrc->src_ip_secondary, sctpsrc->src_port);
+
+   /* if (usrsctp_bind(sctpsrc->sock, (struct sockaddr *)&addr4[0], sizeof(struct sockaddr_in)) < 0) {
+    *    GST_ERROR_OBJECT(sctpsrc, "usrsctp_bind failed: %s", strerror(errno));
+    *    return FALSE;
+    * } */
+   if (usrsctp_bindx(sctpsrc->sock, (struct sockaddr *)&addr4, 2, SCTP_BINDX_ADD_ADDR) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_bindx failed: %s", strerror(errno));
+      return FALSE;
+   }
+
+   if (usrsctp_listen(sctpsrc->sock, 2) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen failed: %s", strerror(errno));
+   }
+
+   /* struct sockaddr *addr_accept;
+    * socklen_t sock_l;
+    * if (usrsctp_accept(sctpsrc->sock, addr_accept, &sock_l) == NULL) {
+    *    GST_ERROR_OBJECT(sctpsrc, "usrsctp_accept failed: %s", strerror(errno));
+    * }
+    * GST_INFO_OBJECT(sctpsrc, "Association established _accept"); */
+
+   /********** WAIT until session established */
+/*    socklen_t from_len = (socklen_t)sizeof(struct sockaddr_in6);
+ *    int flags    = 0;
+ *    socklen_t infolen = (socklen_t)sizeof(struct sctp_rcvinfo);
+ *    GstMapInfo map;
+ *    GstBuffer *outbuf = NULL;
+ *    outbuf = gst_buffer_new_and_alloc(BUFFER_SIZE);
+ *    gst_buffer_map(outbuf, &map, GST_MAP_READWRITE);
+ *
+ *    struct sctp_rcvinfo rcv_info;
+ *    unsigned int infotype;
+ *    struct sockaddr_in6 from;
+ *
+ *    while(1) {
+ *       int n = usrsctp_recvv(sctpsrc->sock, (void *)map.data, BUFFER_SIZE, (struct sockaddr *)&from,
+ *             &from_len, (void *)&rcv_info, &infolen, &infotype, &flags);
+ *       if (flags & MSG_NOTIFICATION) {
+ *          union sctp_notification *sn = (union sctp_notification *)map.data;
+ *          if (sn->sn_header.sn_type == SCTP_ASSOC_CHANGE &&
+ *                sn->sn_assoc_change.sac_state == SCTP_COMM_UP) {
+ *             GST_INFO_OBJECT(sctpsrc, "Association established");
+ *             break;
+ *          } else {
+ *             GST_TRACE_OBJECT(sctpsrc, "Notificatjion of type %u length %llu received.",
+ *                   sn->sn_header.sn_type, (unsigned long long)n);
+ *             continue;
+ *          }
+ *       } else {
+ *          GST_TRACE_OBJECT(sctpsrc, "Msg of length %llu received, still waiting for session setup",
+ *                (unsigned long long)n);
+ *       }
  *    } */
-   if (usrsctp_listen(sctpsrc->sock, 1) < 0) {
-      GST_ERROR_OBJECT(sctpsrc, "usrsctp_listen");
+
+   /* GST_INFO_OBJECT(sctpsrc, "binding");
+    * if (usrsctp_bindx(sctpsrc->sock, (struct sockaddr *)&addr4[1], 1, SCTP_BINDX_ADD_ADDR) < 0) {
+    *    GST_ERROR_OBJECT(sctpsrc, "usrsctp_bindx failed: %s", strerror(errno));
+    *    return FALSE;
+    * }
+    * GST_INFO_OBJECT(sctpsrc, "bind returned"); */
+   /* gst_sctpsrc_stop((GstBaseSrc *)sctpsrc); */
+   /* exit(0); */
+
+   int n;
+   struct sockaddr *addrs;
+   GString *addr_string;
+   if ((n = usrsctp_getladdrs(sctpsrc->sock, 0, &addrs)) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_getladdrs: %s", strerror(errno));
+   } else {
+      addr_string = g_string_new("");
+      usrsctp_addrs_to_string(addrs, n, addr_string);
+      GST_INFO_OBJECT(sctpsrc, "SCTP Local addresses: %s", addr_string->str);
+      g_string_free(addr_string, TRUE);
+      usrsctp_freeladdrs(addrs);
    }
 
    sctpsrc->socket_open = TRUE;
-
    return TRUE;
 }
 
@@ -743,64 +784,64 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
  *   return GST_FLOW_OK;
  * } */
 
-/* static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
- *                               size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info) {
- *    char namebuf[INET6_ADDRSTRLEN];
- *    const char *name;
- *    uint16_t port;
- *
- *    if (data) {
- *       if (flags & MSG_NOTIFICATION) {
- *          GST_INFO("Notification of length %d received.", (int)datalen);
- *       } else {
- *          switch (addr.sa.sa_family) {
- * #ifdef INET
- *          case AF_INET:
- *             name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
- *             port = ntohs(addr.sin.sin_port);
- *             break;
- * #endif
- * #ifdef INET6
- *          case AF_INET6:
- *             name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
- *             port = ntohs(addr.sin6.sin6_port);
- *             break;
- * #endif
- *          case AF_CONN:
- *             snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
- *             name = namebuf;
- *             port = ntohs(addr.sconn.sconn_port);
- *             break;
- *          default:
- *             name = NULL;
- *             port = 0;
- *             break;
- *          }
- *          GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u "
- *                   "and TSN %u, PPID "
- *                   "%u, context %u.",
- *                   (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn,
- *                   ntohl(rcv.rcv_ppid), rcv.rcv_context);
- *          if (flags & MSG_EOR) {
- *             struct sctp_sndinfo snd_info;
- *
- *             snd_info.snd_sid   = rcv.rcv_sid;
- *             snd_info.snd_flags = 0;
- *             if (rcv.rcv_flags & SCTP_UNORDERED) {
- *                snd_info.snd_flags |= SCTP_UNORDERED;
- *             }
- *             snd_info.snd_ppid     = rcv.rcv_ppid;
- *             snd_info.snd_context  = 0;
- *             snd_info.snd_assoc_id = rcv.rcv_assoc_id;
- *             if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
- *                               SCTP_SENDV_SNDINFO, 0) < 0) {
- *                GST_ERROR("sctp_sendv");
- *             }
- *          }
- *       }
- *       free(data);
- *    }
- *    return (1);
- * } */
+static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
+                              size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info) {
+   char namebuf[INET6_ADDRSTRLEN];
+   const char *name;
+   uint16_t port;
+
+   if (data) {
+      if (flags & MSG_NOTIFICATION) {
+         GST_INFO("Notification of length %d received.", (int)datalen);
+      } else {
+         switch (addr.sa.sa_family) {
+#ifdef INET
+         case AF_INET:
+            name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
+            port = ntohs(addr.sin.sin_port);
+            break;
+#endif
+#ifdef INET6
+         case AF_INET6:
+            name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
+            port = ntohs(addr.sin6.sin6_port);
+            break;
+#endif
+         case AF_CONN:
+            snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
+            name = namebuf;
+            port = ntohs(addr.sconn.sconn_port);
+            break;
+         default:
+            name = NULL;
+            port = 0;
+            break;
+         }
+         GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u "
+                  "and TSN %u, PPID "
+                  "%u, context %u.",
+                  (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn,
+                  ntohl(rcv.rcv_ppid), rcv.rcv_context);
+         if (flags & MSG_EOR) {
+            struct sctp_sndinfo snd_info;
+
+            snd_info.snd_sid   = rcv.rcv_sid;
+            snd_info.snd_flags = 0;
+            if (rcv.rcv_flags & SCTP_UNORDERED) {
+               snd_info.snd_flags |= SCTP_UNORDERED;
+            }
+            snd_info.snd_ppid     = rcv.rcv_ppid;
+            snd_info.snd_context  = 0;
+            snd_info.snd_assoc_id = rcv.rcv_assoc_id;
+            if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
+                              SCTP_SENDV_SNDINFO, 0) < 0) {
+               GST_ERROR("sctp_sendv");
+            }
+         }
+      }
+      free(data);
+   }
+   return (1);
+}
 
 // vim: ft=c

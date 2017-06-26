@@ -38,14 +38,12 @@ struct _GstSctpSink
   GstBaseSink base_sctpsink;
 
   /* properties */
-  gchar     *address;
-  gchar     *host;
-  gint       port;
-  gint       src_port;
-  /* gint       ttl; */
-  /* gint       buffer_size; */
-  /* guint64    timeout; */
-  /* gint       skip_first_bytes; */
+  gchar *dest_ip;
+  gchar *src_ip;
+  gchar *dest_ip_secondary;
+  gchar *src_ip_secondary;
+  gint dest_port;
+  gint src_port;
 
   gboolean  udp_encaps;
   gint      udp_encaps_port_local;

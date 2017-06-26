@@ -26,7 +26,7 @@
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_USRSCTP);
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_SCTPUTILS);
 
-void gst_set_sctp_debug(){
+void gst_usrsctp_debug_init(){
    GST_DEBUG_CATEGORY_INIT (GST_CAT_USRSCTP, "usrsctp",
          GST_DEBUG_FG_GREEN,
          "usrsctp");
@@ -34,14 +34,9 @@ void gst_set_sctp_debug(){
    GST_DEBUG_CATEGORY_INIT (GST_CAT_SCTPUTILS, "sctputils",
          GST_DEBUG_FG_MAGENTA,
          "sctputils");
-
-#ifdef SCTP_DEBUG
-   usrsctp_sysctl_set_sctp_debug_on(SCTP_DEBUG_ALL);
-#endif
 }
 
-void usrsctp_debug_printf(const char *format, ...)
-{
+void usrsctp_debug_printf(const char *format, ...) {
    va_list ap;
    gchar *out;
 
@@ -54,7 +49,7 @@ void usrsctp_debug_printf(const char *format, ...)
    va_end(ap);
 
    out[strcspn(out, "\n")] = '\0';
-   GST_CAT_DEBUG(GST_CAT_USRSCTP,"%s", out);
+   GST_CAT_TRACE(GST_CAT_USRSCTP,"%s", out);
    g_free(out);
 }
 
@@ -118,7 +113,7 @@ GST_EXPORT void print_rtp_header (GstElement *obj, unsigned char *buffer) {
          rtph->seq_num, ntohl(rtph->TS), rtph->ssrc);
 }
 
-int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str) {
+int usrsctp_addrs_to_string(struct sockaddr *addrs, int n, GString *str) {
    struct sockaddr *addr;
    addr = addrs;
    for (int i = 0; i < n; i++) {

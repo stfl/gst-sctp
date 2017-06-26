@@ -50,6 +50,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <usrsctp.h>
+#include <netinet/sctp_constants.h>
+/* #include <netinet/sctp.h> */
 
 #include <netdb.h>
 
@@ -59,26 +61,18 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsink_debug_category
 
 // paths definition
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "11.1.1.1"
-#define  SCTP_DEFAULT_DEST_PORT_PRIMARY       1111
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "11.1.1.2"
-#define  SCTP_DEFAULT_SRC_PORT_PRIMARY        2221
-
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "12.1.1.1"
-#define  SCTP_DEFAULT_DEST_PORT_SECONDARY     1112
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "12.1.1.2"
-#define  SCTP_DEFAULT_SRC_PORT_SECONDARY      2222
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "192.168.0.1"
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "192.168.0.2"
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "12.0.0.1"
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "12.0.0.2"
+#define  SCTP_DEFAULT_DEST_PORT       1111
+#define  SCTP_DEFAULT_SRC_PORT        2222
 
 #define  SCTP_DEFAULT_PR_POLICY               SCTP_PR_SCTP_TTL
 #define  SCTP_DEFAULT_PR_VALUE                80  // ms
 
 #define  SCTP_DEFAULT_UNORDED                 TRUE
 #define  SCTP_DEFAULT_NR_SACK                 TRUE
-
-// FIXME this is depricated
-#define  SCTP_DEFAULT_HOST                    "localhost"
-#define  SCTP_DEFAULT_PORT                    1117
-#define  SCTP_DEFAULT_SRC_PORT                4455
 
 #define  SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE  9989
 #define  SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL   9988
@@ -87,6 +81,9 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_BS                      FALSE
 #define  SCTP_DEFAULT_CMT                     FALSE
 #define  SCTP_DEFAULT_DUPL_POLICY             "off"
+
+/* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2|SCTP_DEBUG_OUTPUT2) */
+#define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
 
 #define SCTP_PPID       99
 #define SCTP_SID        1
@@ -192,36 +189,20 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
    base_sink_class->render = gst_sctpsink_render;
    /* base_sink_class->render_list = gst_sctpsink_render_list; */
 
-   g_object_class_install_property (gobject_class, PROP_HOST,
-         g_param_spec_string ("host", "Host",
-            "The host/IP of the endpoint send the packets to. The other side must be running",
-            SCTP_DEFAULT_HOST, G_PARAM_READWRITE));
-   g_object_class_install_property (gobject_class, PROP_PORT,
-         g_param_spec_int ("port", "Port",
-            "The port to send the packets to",
-            0, 65535, SCTP_DEFAULT_PORT,
-            G_PARAM_READWRITE));
-
-   g_object_class_install_property (gobject_class, PROP_SRC_PORT,
-         g_param_spec_int ("src-port", "Source Port",
-            "The port to bind the socket to",
-            0, 65535, SCTP_DEFAULT_SRC_PORT,
-            G_PARAM_READWRITE));
-
    g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS,
          g_param_spec_boolean ("udp-encaps", "UDP encapsulation",
             "Enable UDP encapsulation",
             SCTP_DEFAULT_UDP_ENCAPS, G_PARAM_READWRITE));
-   g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_REMOTE,
-         g_param_spec_int ("udp-encaps-port-remote", "remote UDP encapuslation port",
-            "The remote (destnation) port used with UDP encapsulate",
-            0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE,
-            G_PARAM_READWRITE));
-   g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_LOCAL,
-         g_param_spec_int ("udp-encaps-port-local",  "local UDP encapuslation port",
-            "The local (source) port used with UDP encapsulate",
-            0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL,
-            G_PARAM_READWRITE));
+   /* g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_REMOTE, */
+   /*       g_param_spec_int ("udp-encaps-port-remote", "remote UDP encapuslation port", */
+   /*          "The remote (destnation) port used with UDP encapsulate", */
+   /*          0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE, */
+   /*          G_PARAM_READWRITE)); */
+   /* g_object_class_install_property (gobject_class, PROP_UDP_ENCAPS_PORT_LOCAL, */
+   /*       g_param_spec_int ("udp-encaps-port-local",  "local UDP encapuslation port", */
+   /*          "The local (source) port used with UDP encapsulate", */
+   /*          0, 65535, SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL, */
+   /*          G_PARAM_READWRITE)); */
    g_object_class_install_property (gobject_class, PROP_USRSCTP_STATS,
          g_param_spec_pointer ("usrsctp-stats",  "usrsctp stats",
             "Stats (struct sctpstat *) provided by libusrsctp",
@@ -251,13 +232,13 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
 {
    /* GstPad *sinkpad = GST_BASE_SINK_PAD(sctpsink); */
 
-   sctpsink->host = g_strdup (SCTP_DEFAULT_HOST);
-   sctpsink->port = SCTP_DEFAULT_PORT;
-   sctpsink->src_port = SCTP_DEFAULT_SRC_PORT;
+   /* sctpsink->host = g_strdup (SCTP_DEFAULT_HOST); */
+   /* sctpsink->port = SCTP_DEFAULT_PORT; */
+   /* sctpsink->src_port = SCTP_DEFAULT_SRC_PORT; */
 
-   sctpsink->udp_encaps = SCTP_DEFAULT_UDP_ENCAPS;
-   sctpsink->udp_encaps_port_local = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL;
-   sctpsink->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE;
+   /* sctpsink->udp_encaps = SCTP_DEFAULT_UDP_ENCAPS; */
+   /* sctpsink->udp_encaps_port_local = SCTP_DEFAULT_UDP_ENCAPS_PORT_LOCAL; */
+   /* sctpsink->udp_encaps_port_remote = SCTP_DEFAULT_UDP_ENCAPS_PORT_REMOTE; */
 
    sctpsink->unordered = SCTP_DEFAULT_UNORDED;
    sctpsink->nr_sack = SCTP_DEFAULT_NR_SACK;
@@ -269,6 +250,18 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
 
    sctpsink->pr_policy = SCTP_DEFAULT_PR_POLICY;
    sctpsink->pr_value = SCTP_DEFAULT_PR_VALUE;
+
+   sctpsink->dest_ip   = g_strdup(SCTP_DEFAULT_DEST_IP_PRIMARY);
+   sctpsink->dest_port =          SCTP_DEFAULT_DEST_PORT;
+   sctpsink->src_ip    = g_strdup(SCTP_DEFAULT_SRC_IP_PRIMARY);
+   sctpsink->src_port  =          SCTP_DEFAULT_SRC_PORT;
+
+   sctpsink->dest_ip_secondary   = g_strdup(SCTP_DEFAULT_DEST_IP_SECONDARY);
+   /* sctpsink->dest_port_secondary =          SCTP_DEFAULT_DEST_PORT_SECONDARY; */
+   sctpsink->src_ip_secondary    = g_strdup(SCTP_DEFAULT_SRC_IP_SECONDARY);
+   /* sctpsink->src_port_secondary  =          SCTP_DEFAULT_SRC_PORT_SECONDARY; */
+
+   gst_usrsctp_debug_init();
 }
 
 void
@@ -278,21 +271,11 @@ gst_sctpsink_set_property (GObject * object, guint property_id,
    GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
    switch (property_id) {
-      case PROP_HOST: {
-         const gchar *host;
-         host = g_value_get_string (value);
-         g_free (sctpsink->host);
-         sctpsink->host = g_strdup (host);
-         GST_DEBUG_OBJECT(sctpsink, "set host: %s", sctpsink->host);
-         break; }
-      case PROP_PORT:
-         sctpsink->port = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set port: %d", sctpsink->port);
-         break;
-      case PROP_SRC_PORT:
-         sctpsink->src_port = g_value_get_int (value);
-         GST_DEBUG_OBJECT(sctpsink, "set src port: %d", sctpsink->src_port);
-         break;
+      /* case PROP_SRC_PORT: */
+      /*    sctpsink->src_port = g_value_get_int (value); */
+      /*    GST_DEBUG_OBJECT(sctpsink, "set src port: %d", sctpsink->src_port); */
+      /*    break; */
+
       case PROP_UDP_ENCAPS:
          sctpsink->udp_encaps = g_value_get_boolean (value);
          GST_DEBUG_OBJECT(sctpsink, "set UDP encapsulation: %s", sctpsink->udp_encaps ? "TRUE" : "FALSE");
@@ -335,14 +318,8 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
    GstSctpSink *sctpsink = GST_SCTPSINK (object);
 
    switch (property_id) {
-      case PROP_HOST:
-         g_value_set_string (value, sctpsink->host);
-         break;
-      case PROP_PORT:
-         g_value_set_int (value, sctpsink->port);
-         break;
-      case PROP_SRC_PORT:
-         g_value_set_int (value, sctpsink->src_port);
+      /* case PROP_SRC_PORT: */
+      /*    g_value_set_int (value, sctpsink->src_port); */
          break;
       case PROP_UDP_ENCAPS:
          g_value_set_boolean (value, sctpsink->udp_encaps);
@@ -390,8 +367,16 @@ void gst_sctpsink_finalize (GstSctpSink * sctpsink) {
 
    // FIXME: null-out all attributes
 
-   g_free (sctpsink->host);
-   sctpsink->host = NULL;
+
+   g_free (sctpsink->src_ip);
+   sctpsink->src_ip = NULL;
+   g_free (sctpsink->dest_ip);
+   sctpsink->dest_ip = NULL;
+
+   g_free (sctpsink->src_ip_secondary);
+   sctpsink->src_ip_secondary = NULL;
+   g_free (sctpsink->dest_ip_secondary);
+   sctpsink->dest_ip_secondary = NULL;
 
    g_free (sctpsink->dupl_policy);
    sctpsink->dupl_policy = NULL;
@@ -508,9 +493,7 @@ gst_sctpsink_start (GstBaseSink * sink)
 
    /* struct socket *sock; */
    struct sockaddr *addrs;
-   struct sockaddr_in addr4;
-   struct sockaddr_in6 addr6;
-   char name[INET_ADDRSTRLEN];
+   /* struct sockaddr_in6 addr6; */
    /* struct sctp_udpencaps encaps; */
    /* char buffer[80]; */
    int n;
@@ -521,12 +504,15 @@ gst_sctpsink_start (GstBaseSink * sink)
    usrsctp_init(sctpsink->udp_encaps ? sctpsink->udp_encaps_port_local : 0, NULL,
                 usrsctp_debug_printf);
 
-   gst_set_sctp_debug();
+#ifdef SCTP_DEBUG
+   usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);
+   usrsctp_sysctl_set_sctp_logging_level(SCTP_LTRACE_ERROR_ENABLE|SCTP_LTRACE_CHUNK_ENABLE);
+#endif
 
    usrsctp_sysctl_set_sctp_blackhole(2);
    usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
    usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
-   if (sctpsink->nr_sack == TRUE)
+   if (sctpsink->nr_sack)
       usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
    usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
    /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
@@ -534,26 +520,58 @@ gst_sctpsink_start (GstBaseSink * sink)
 
    /* CMT Options */
 
-   /* sctp_cmt_on_off */
-   /* sctp_buffer_splitting */
+   if (sctpsink->cmt)
+      usrsctp_sysctl_set_sctp_cmt_on_off(1);
+   if (sctpsink->bs)
+      usrsctp_sysctl_set_sctp_buffer_splitting(1);
 
    if ((sctpsink->sock = usrsctp_socket(AF_INET6, SOCK_STREAM, IPPROTO_SCTP,
                usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
 
-   /* if (sctpsink->src_port) {  // with given source port */
-      memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
-      addr4.sin_family = AF_INET;
-      addr4.sin_port   = htons(SCTP_DEFAULT_SRC_PORT_PRIMARY);
-      addr4.sin_addr.s_addr   = inet_addr(SCTP_DEFAULT_SRC_IP_PRIMARY);
-      /* addr4.sin_addr.s_addr   = (in_addr_t) INADDR_ANY; */
-      GST_INFO_OBJECT(sctpsink, "binding client to: %s:%d",
-            inet_ntop(AF_INET, &addr4.sin_addr, name, INET_ADDRSTRLEN),
-            ntohs(addr4.sin_port));
-      if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr4, sizeof(struct sockaddr_in)) < 0) {
-         GST_ERROR_OBJECT(sctpsink, "usrsctp_bind");
-      }
+   GST_DEBUG_OBJECT(sctpsink, "binding client to: %s, %s port: %d",
+         sctpsink->src_ip, sctpsink->src_ip_secondary, sctpsink->src_port);
+
+
+   struct sockaddr_in addr4_src[2];
+   memset(&addr4_src, 0, sizeof(struct sockaddr_in) * 2);
+   addr4_src[0].sin_family      = addr4_src[1].sin_family = AF_INET;
+   addr4_src[0].sin_port        = htons(sctpsink->src_port);
+
+   if (inet_pton(AF_INET, sctpsink->src_ip, &addr4_src[0].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal source address: %s", sctpsink->src_ip);
+      return FALSE;
+   }
+   if (inet_pton(AF_INET, sctpsink->src_ip_secondary, &addr4_src[1].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal source address: %s", sctpsink->src_ip_secondary);
+      return FALSE;
+   }
+
+   /* addr4_src[0].sin_addr.s_addr        = INADDR_ANY; */
+   /* if (usrsctp_bind(sctpsink->sock, (struct sockaddr *)&addr4_src[0], sizeof(struct sockaddr_in)) < 0) {
+    *    GST_ERROR_OBJECT(sctpsink, "usrsctp_bind failed: %s", strerror(errno));
+    *    return FALSE;
+    * } */
+   if (usrsctp_bindx(sctpsink->sock, (struct sockaddr *)&addr4_src, 2, SCTP_BINDX_ADD_ADDR) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_bindx failed: %s", strerror(errno));
+      return FALSE;
+   }
+
+   if ((n = usrsctp_getladdrs(sctpsink->sock, 0, &addrs)) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_getladdrs %s", strerror(errno));
+   } else {
+      addr_string = g_string_new("");
+      usrsctp_addrs_to_string(addrs, n, addr_string);
+      GST_INFO_OBJECT(sctpsink, "SCTP Local addresses: %s", addr_string->str);
+      g_string_free(addr_string, TRUE);
+      usrsctp_freeladdrs(addrs);
+   }
+
+// FIXME here:
+/* option: */
+/* SCTP_PRIMARY_ADDR */
+/* struct sctp_setprim */
 
       /************ SCTP Options *****************/
    /* if (argc > 5) { // udp encapsulation
@@ -594,53 +612,50 @@ gst_sctpsink_start (GstBaseSink * sink)
       * 8.1.19.  Get or Set Delayed SACK Timer (SCTP_DELAYED_SACK)
       * https://tools.ietf.org/html/rfc6458#section-8.1.19 */
 
-
    // SCTP_MAXSEG > 0    == fragmentation is not limited.. and definde by pmtu
 
+   struct sockaddr_in addr4_dest[2];
+   memset(&addr4_dest, 0, sizeof(struct sockaddr_in) * 2);
+   addr4_dest[0].sin_family      = addr4_dest[1].sin_family = AF_INET;
+   addr4_dest[0].sin_port        = addr4_dest[1].sin_port = htons(sctpsink->dest_port);
 
-
-
-   // clear the addresses again
-   memset((void *)&addr4, 0, sizeof(struct sockaddr_in));
-   memset((void *)&addr6, 0, sizeof(struct sockaddr_in6));
-#ifdef HAVE_SIN_LEN
-   addr4.sin_len = sizeof(struct sockaddr_in);
-#endif
-#ifdef HAVE_SIN6_LEN
-   addr6.sin6_len = sizeof(struct sockaddr_in6);
-#endif
-   addr4.sin_family = AF_INET;
-   /* addr6.sin6_family = AF_INET6; */
-   addr4.sin_port = htons(SCTP_DEFAULT_DEST_PORT_PRIMARY);
-   /* addr6.sin6_port = htons(SCTP_DEFAULT_DEST_PORT_PRIMARY); */
-   GST_TRACE_OBJECT(sctpsink, "connecting");
-   /* if (inet_pton(AF_INET6, sctpsink->host, &addr6.sin6_addr) == 1) {
-    *    if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr6, sizeof(struct sockaddr_in6)) < 0) {
-    *       GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
-    *    }
-    * } else */
-   if (inet_pton(AF_INET, SCTP_DEFAULT_DEST_IP_PRIMARY, &addr4.sin_addr) == 1) {
-      if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr4, sizeof(struct sockaddr_in)) < 0) {
-         GST_ERROR_OBJECT(sctpsink, "usrsctp_connect");
-      }
-   } else {
-      GST_ERROR_OBJECT(sctpsink, "Illegal destination address");
+   if (inet_pton(AF_INET, sctpsink->dest_ip, &addr4_dest[0].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal destination address: %s", sctpsink->dest_ip);
+      return FALSE;
+   }
+   if (inet_pton(AF_INET, sctpsink->dest_ip_secondary, &addr4_dest[1].sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal destination address: %s", sctpsink->dest_ip_secondary);
+      return FALSE;
    }
 
-   if ((n = usrsctp_getladdrs(sctpsink->sock, 0, &addrs)) < 0) {
-      GST_ERROR_OBJECT(sctpsink, "usrsctp_getladdrs");
-   } else {
-      addr_string = g_string_new("");
-      n = usrsctp_addrs_to_string((GstElement *)sctpsink, addrs, n, addr_string);
-      GST_INFO_OBJECT(sctpsink, "SCTP Local addresses: %s", addr_string->str);
-      g_string_free(addr_string, TRUE);
-      usrsctp_freeladdrs(addrs);
+   GST_DEBUG_OBJECT(sctpsink, "connecting to: %s, %s port: %d",
+         sctpsink->dest_ip, sctpsink->dest_ip_secondary, sctpsink->dest_port);
+
+   /* if (usrsctp_connect(sctpsink->sock, (struct sockaddr *)&addr4_dest[0], sizeof(struct sockaddr_in)) < 0) {
+    *    GST_ERROR_OBJECT(sctpsink, "usrsctp_connect failed: %s", strerror(errno));
+    *    return FALSE;
+    * } */
+
+/*    GST_INFO_OBJECT(sctpsink, "Primary connected, connecting seccondary channel %s -> %s", 
+ *          sctpsink->src_ip_secondary, sctpsink->dest_ip_secondary);
+ *
+ *
+ *    if (usrsctp_bindx(sctpsink->sock, (struct sockaddr *)&addr4_src[1], 1, SCTP_BINDX_ADD_ADDR) < 0) {
+ *       GST_ERROR_OBJECT(sctpsink, "usrsctp_bindx failed: %s", strerror(errno));
+ *       return FALSE;
+ *    } */
+
+   if (usrsctp_connectx(sctpsink->sock, (struct sockaddr *)&addr4_dest, 2,
+            (sctp_assoc_t *)&(int){ SCTP_ASSOC_ID }) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_connect failed: %s", strerror(errno));
+      return FALSE;
    }
+
    if ((n = usrsctp_getpaddrs(sctpsink->sock, 0, &addrs)) < 0) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_getpaddrs");
    } else {
       addr_string = g_string_new("");
-      n = usrsctp_addrs_to_string((GstElement *)sctpsink, addrs, n, addr_string);
+      usrsctp_addrs_to_string(addrs, n, addr_string);
       GST_INFO_OBJECT(sctpsink, "SCTP Peer addresses: %s", addr_string->str);
       g_string_free(addr_string, TRUE);
       usrsctp_freepaddrs(addrs);

@@ -31,7 +31,7 @@ if (( ! ${+norun[1]} )); then
    try_bin=$1
    if [[ -x $try_bin ]]; then
       echo "found $try_bin"
-      BIN=$try_bin
+      BIN=$(pwd)/$try_bin
    else
       BIN="${PROJECT_DIR}/**/${try_bin}(*[1])"
       # if [[ ! -f ${~BIN} ]]; then

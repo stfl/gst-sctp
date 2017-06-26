@@ -181,7 +181,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    GstElement *source = gst_element_factory_make("videotestsrc", "source");
    gst_util_set_object_arg(G_OBJECT(source), "is-live", "true");
    gst_util_set_object_arg(G_OBJECT(source), "pattern", "gradient");
-   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "40");
+   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "10");
 
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
          "format",     G_TYPE_STRING,      "RGBA",

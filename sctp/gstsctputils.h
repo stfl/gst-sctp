@@ -5,10 +5,13 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define SCTP_LTRACE_CHUNK_ENABLE			0x00400000
+#define SCTP_LTRACE_ERROR_ENABLE			0x00800000
+
 GST_EXPORT void hexDump (char *desc, void *addr, int len);
-GST_EXPORT void gst_set_sctp_debug(void);
+GST_EXPORT void gst_usrsctp_debug_init(void);
 void print_rtp_header (GstElement *obj, unsigned char *buffer);
-int usrsctp_addrs_to_string(GstElement *obj, struct sockaddr *addrs, int n, GString *str);
+int usrsctp_addrs_to_string(struct sockaddr *addrs, int n, GString *str);
 void usrsctp_debug_printf(const char *format, ...);
 
 #ifdef __WIN32__
