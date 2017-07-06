@@ -7,7 +7,7 @@ sctp_sources = [
 
 gstsctp = library('gstsctp',
       sctp_sources,
-      dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep, usrsctp_dep, th_dep],
+      dependencies : [gst_dep, gstbase_dep, gstnet_dep, gio_dep, usrsctp_dep, th_dep, gstrtp_dep],
       c_args : [gst_args, Werror_args],
       include_directories : [configinc, usrsctpinc],
       install_dir : meson.build_root(),

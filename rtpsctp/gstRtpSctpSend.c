@@ -36,7 +36,6 @@
 GST_DEBUG_CATEGORY_STATIC (rtpsctpsend);
 #define GST_CAT_DEFAULT rtpsctpsend
 
-
 typedef struct __GstRtpSctpSender _GstRtpSctpSender;
 struct __GstRtpSctpSender
 {
@@ -181,7 +180,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    GstElement *source = gst_element_factory_make("videotestsrc", "source");
    gst_util_set_object_arg(G_OBJECT(source), "is-live", "true");
    gst_util_set_object_arg(G_OBJECT(source), "pattern", "gradient");
-   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "10");
+   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "100");
 
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
          "format",     G_TYPE_STRING,      "RGBA",
@@ -223,11 +222,20 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-secondary",  "4321"); */
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-secondary",  "5432"); */
 
-   if (variant == PIPELINE_CMT ||
-       variant == PIPELINE_CMT_DPR ||
-       variant == PIPELINE_CMT_DUPL) {
+   if (variant == PIPELINE_CMT
+       /* || variant == PIPELINE_CMT_DUPL */
+       || variant == PIPELINE_CMT_DPR
+       ) {
       gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
       gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
+   }
+
+   if (variant == PIPELINE_CMT_DUPL) {
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0");
+   } else {
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "80");
    }
 
    if (variant == PIPELINE_CMT_DPR) {

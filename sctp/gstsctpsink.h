@@ -21,6 +21,7 @@
 #define _GST_SCTPSINK_H_
 
 #include <gst/base/gstbasesink.h>
+#include <netinet/in.h>
 
 G_BEGIN_DECLS
 
@@ -32,6 +33,12 @@ G_BEGIN_DECLS
 
 typedef struct _GstSctpSink GstSctpSink;
 typedef struct _GstSctpSinkClass GstSctpSinkClass;
+
+enum DuplicationPolicy{
+	DUPL_POLICY_OFF,
+	DUPL_POLICY_DUPLICATE,
+	DUPL_POLICY_DPR,
+};
 
 struct _GstSctpSink
 {
@@ -45,6 +52,11 @@ struct _GstSctpSink
   gint dest_port;
   gint src_port;
 
+  struct sockaddr_in dest_addr;
+  struct sockaddr_in dest_addr_secondary;
+  struct sockaddr_in src_addr;
+  struct sockaddr_in src_addr_secondary;
+
   gboolean  udp_encaps;
   gint      udp_encaps_port_local;
   gint      udp_encaps_port_remote;
@@ -54,12 +66,11 @@ struct _GstSctpSink
 
   gboolean   cmt;
   gboolean   bs;
-  gchar     *dupl_policy;
+  gchar     *dupl_policy_string;
+  enum DuplicationPolicy dupl_policy;
 
   gint   pr_policy;
   gint   pr_value;
-
-  struct sockaddr *addrs;
 
   struct socket *sock;
   gboolean  socket_open;

@@ -36,6 +36,7 @@
 
 #include <gst/gst.h>
 #include <gst/base/gstbasesink.h>
+#include <gst/rtp/gstrtpbuffer.h>
 
 #include "gstsctpsink.h"
 #include "gstsctputils.h"
@@ -68,8 +69,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_DEST_PORT       1111
 #define  SCTP_DEFAULT_SRC_PORT        2222
 
-#define  SCTP_DEFAULT_PR_POLICY               SCTP_PR_SCTP_TTL
-#define  SCTP_DEFAULT_PR_VALUE                80  // ms
+#define  SCTP_DEFAULT_PR_POLICY               SCTP_PR_SCTP_NONE // 0x0000 /* Reliable transfer */
+#define  SCTP_DEFAULT_PR_VALUE                0 //80  // ms
 
 #define  SCTP_DEFAULT_UNORDED                 TRUE
 #define  SCTP_DEFAULT_NR_SACK                 TRUE
@@ -221,6 +222,16 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
             "enable how packets are duplicated onto all pahts",
             SCTP_DEFAULT_DUPL_POLICY, G_PARAM_READWRITE));
 
+   g_object_class_install_property (gobject_class, PROP_PR,
+         g_param_spec_string ("pr-policy",  "Policy partial reliabiltiy",
+            "pr policy as defined in usrsctp.h",
+ SCTP_DEFAULT_PR_POLICY, G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_PR_VALUE,
+         g_param_spec_int ("pr-value",  "value for partial reliabiltiy",
+            "pr value",
+            0, 65535, SCTP_DEFAULT_PR_VALUE,
+            G_PARAM_READWRITE));
+
    gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
          "SCTP Sink", "Sink/Network",
          "Send data over the network via SCTP",
@@ -246,7 +257,8 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
    sctpsink->cmt = SCTP_DEFAULT_CMT;
    sctpsink->bs = SCTP_DEFAULT_BS;
 
-   sctpsink->dupl_policy = g_strdup(SCTP_DEFAULT_DUPL_POLICY);
+   sctpsink->dupl_policy_string = g_strdup(SCTP_DEFAULT_DUPL_POLICY);
+   sctpsink->dupl_policy = DUPL_POLICY_OFF;
 
    sctpsink->pr_policy = SCTP_DEFAULT_PR_POLICY;
    sctpsink->pr_value = SCTP_DEFAULT_PR_VALUE;
@@ -300,9 +312,45 @@ gst_sctpsink_set_property (GObject * object, guint property_id,
       case PROP_DUPL_POLICY: {
          const gchar *dupl_policy;
          dupl_policy = g_value_get_string (value);
-         g_free (sctpsink->dupl_policy);
-         sctpsink->dupl_policy = g_strdup (dupl_policy);
-         GST_DEBUG_OBJECT(sctpsink, "set duplication policy: %s", sctpsink->dupl_policy);
+         if (0 == strncmp(dupl_policy, "off", 10))
+            sctpsink->dupl_policy = DUPL_POLICY_OFF;
+         else if (0 == strncmp(dupl_policy, "dupl", 10))
+            sctpsink->dupl_policy = DUPL_POLICY_DUPLICATE;
+         else if (0 == strncmp(dupl_policy, "dpr", 10))
+            sctpsink->dupl_policy = DUPL_POLICY_DPR;
+         else {
+            GST_ERROR_OBJECT(sctpsink, "Wrong duplication policy");
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+         }
+         g_free (sctpsink->dupl_policy_string);
+         sctpsink->dupl_policy_string = g_strdup (dupl_policy);
+         GST_DEBUG_OBJECT(sctpsink, "set duplication policy: %s", sctpsink->dupl_policy_string);
+         break; }
+      case PROP_PR_VALUE:
+         sctpsink->pr_value = g_value_get_int (value);
+         GST_DEBUG_OBJECT(sctpsink, "set pr value: %d", sctpsink->pr_value);
+         break;
+
+      case PROP_PR: {
+         const gchar *pr_policy;
+         pr_policy = g_value_get_string (value);
+         if ((0 == strncmp(pr_policy, "none", 10))
+               || (0 == strncmp(pr_policy, "none", 10)))
+            sctpsink->pr_policy = SCTP_PR_SCTP_NONE;
+         else if (0 == strncmp(pr_policy, "rtx", 10))
+            sctpsink->pr_policy = SCTP_PR_SCTP_RTX;
+         else if (0 == strncmp(pr_policy, "ttl", 10))
+            sctpsink->pr_policy = SCTP_PR_SCTP_TTL;
+         else if ((0 == strncmp(pr_policy, "prio", 10))
+               || (0 == strncmp(pr_policy, "buf", 10)))
+            sctpsink->pr_policy = SCTP_PR_SCTP_BUF;
+         else {
+            GST_ERROR_OBJECT(sctpsink, "Wrong pr policy");
+            G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+            break;
+         }
+         GST_DEBUG_OBJECT(sctpsink, "set pr policy: %s", pr_policy);
          break; }
 
       default:
@@ -320,7 +368,7 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
    switch (property_id) {
       /* case PROP_SRC_PORT: */
       /*    g_value_set_int (value, sctpsink->src_port); */
-         break;
+         /* break; */
       case PROP_UDP_ENCAPS:
          g_value_set_boolean (value, sctpsink->udp_encaps);
          break;
@@ -338,12 +386,18 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
 
       case PROP_CMT:
          g_value_set_boolean (value, sctpsink->cmt);
-      break;
+         break;
       case PROP_BS:
          g_value_set_boolean (value, sctpsink->bs);
-      break;
+         break;
       case PROP_DUPL_POLICY:
-         g_value_set_string (value, sctpsink->dupl_policy);
+         g_value_set_string (value, sctpsink->dupl_policy_string);
+         break;
+      case PROP_PR:
+         g_value_set_int (value, sctpsink->pr_policy);
+         break;
+      case PROP_PR_VALUE:
+         g_value_set_int (value, sctpsink->pr_value);
          break;
 
       default:
@@ -378,8 +432,8 @@ void gst_sctpsink_finalize (GstSctpSink * sctpsink) {
    g_free (sctpsink->dest_ip_secondary);
    sctpsink->dest_ip_secondary = NULL;
 
-   g_free (sctpsink->dupl_policy);
-   sctpsink->dupl_policy = NULL;
+   g_free (sctpsink->dupl_policy_string);
+   sctpsink->dupl_policy_string = NULL;
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -530,6 +584,9 @@ gst_sctpsink_start (GstBaseSink * sink)
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
 
+   if (usrsctp_set_non_blocking(sctpsink->sock, 0)) 
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_set_non_blocking: %s", strerror(errno));
+
    GST_DEBUG_OBJECT(sctpsink, "binding client to: %s, %s port: %d",
          sctpsink->src_ip, sctpsink->src_ip_secondary, sctpsink->src_port);
 
@@ -568,11 +625,6 @@ gst_sctpsink_start (GstBaseSink * sink)
       usrsctp_freeladdrs(addrs);
    }
 
-// FIXME here:
-/* option: */
-/* SCTP_PRIMARY_ADDR */
-/* struct sctp_setprim */
-
       /************ SCTP Options *****************/
    /* if (argc > 5) { // udp encapsulation
     *    memset(&encaps, 0, sizeof(struct sctp_udpencaps));
@@ -585,8 +637,8 @@ gst_sctpsink_start (GstBaseSink * sink)
     * } */
 
    struct sctp_event event;
-   uint16_t event_types[] = {SCTP_ASSOC_CHANGE,
-                             SCTP_PEER_ADDR_CHANGE,
+   uint16_t event_types[] = {/* SCTP_ASSOC_CHANGE, */
+                             /* SCTP_PEER_ADDR_CHANGE, */
                              SCTP_REMOTE_ERROR,
                              SCTP_SHUTDOWN_EVENT,
                              SCTP_ADAPTATION_INDICATION,
@@ -628,6 +680,20 @@ gst_sctpsink_start (GstBaseSink * sink)
       return FALSE;
    }
 
+   memset(&sctpsink->dest_addr, 0, sizeof(struct sockaddr_in));
+   memset(&sctpsink->dest_addr_secondary, 0, sizeof(struct sockaddr_in));
+   sctpsink->dest_addr.sin_family = sctpsink->dest_addr_secondary.sin_family = AF_INET;
+   sctpsink->dest_addr.sin_port   = sctpsink->dest_addr_secondary.sin_port = htons(sctpsink->dest_port);
+
+   if (inet_pton(AF_INET, sctpsink->dest_ip, &sctpsink->dest_addr.sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal destination address: %s", sctpsink->dest_ip);
+      return FALSE;
+   }
+   if (inet_pton(AF_INET, sctpsink->dest_ip_secondary, &sctpsink->dest_addr_secondary.sin_addr) <= 0) {
+      GST_ERROR_OBJECT(sctpsink, "Illegal destination address: %s", sctpsink->dest_ip_secondary);
+      return FALSE;
+   }
+
    GST_DEBUG_OBJECT(sctpsink, "connecting to: %s, %s port: %d",
          sctpsink->dest_ip, sctpsink->dest_ip_secondary, sctpsink->dest_port);
 
@@ -635,15 +701,6 @@ gst_sctpsink_start (GstBaseSink * sink)
     *    GST_ERROR_OBJECT(sctpsink, "usrsctp_connect failed: %s", strerror(errno));
     *    return FALSE;
     * } */
-
-/*    GST_INFO_OBJECT(sctpsink, "Primary connected, connecting seccondary channel %s -> %s", 
- *          sctpsink->src_ip_secondary, sctpsink->dest_ip_secondary);
- *
- *
- *    if (usrsctp_bindx(sctpsink->sock, (struct sockaddr *)&addr4_src[1], 1, SCTP_BINDX_ADD_ADDR) < 0) {
- *       GST_ERROR_OBJECT(sctpsink, "usrsctp_bindx failed: %s", strerror(errno));
- *       return FALSE;
- *    } */
 
    if (usrsctp_connectx(sctpsink->sock, (struct sockaddr *)&addr4_dest, 2,
             (sctp_assoc_t *)&(int){ SCTP_ASSOC_ID }) < 0) {
@@ -661,6 +718,20 @@ gst_sctpsink_start (GstBaseSink * sink)
       usrsctp_freepaddrs(addrs);
    }
 
+   // TODO: make it async with cb function
+   socklen_t status_len = (socklen_t)sizeof(struct sctp_status);
+   struct sctp_status status;
+   while(1) {
+      if (usrsctp_getsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_STATUS, &status, &status_len) < 0) {
+         GST_ERROR_OBJECT(sctpsink, "getsockopt SCTP_STATUS: %s", strerror(errno));
+      }
+      if (status.sstat_state == SCTP_ESTABLISHED)
+         break;
+      else 
+         g_usleep(30000); // 30ms
+   }
+
+  
    sctpsink->socket_open = TRUE;
    sctpsink->stats_timer_id = g_timeout_add (1000, stats_timer, sctpsink);
    return TRUE;
@@ -807,12 +878,22 @@ gst_sctpsink_query (GstBaseSink * sink, GstQuery * query)
 
 /** Called when a buffer should be presented or output, at the correct moment if the GstBaseSink has
  * been set to sync to the clock. */
-static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer) {
+
+static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink,
+                             GstBuffer * buffer) {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
 
+   /* guint16 seq = 0; */
+   /* GST_TRACE_OBJECT(sctpsink, "seq: %u", seq); */
+   /* seq = gst_rtp_buffer_get_seq((GstRTPBuffer *)buffer); */
+   /* GST_TRACE_OBJECT(sctpsink, "seq: %u", seq); */
+   // FIXME linker problem: undefined reference...
+   
    GstMapInfo map;
    gst_buffer_map (buffer, &map, GST_MAP_READ);
    GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%4lu", gst_buffer_get_size(buffer));
+
+   /* gst_buffer_foreach_meta (buffer, buffer_meta_for_each, buffer); */
 
    struct sctp_sendv_spa spa;
    memset(&spa, 0, sizeof(struct sctp_sendv_spa));
@@ -838,11 +919,23 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
    if (usrsctp_sendv(sctpsink->sock,
             map.data, gst_buffer_get_size(buffer),
             NULL, 0,
+            /* (struct sockaddr *)&sctpsink->dest_addr, 1, */
             &spa, (socklen_t)sizeof(struct sctp_sendv_spa),
             SCTP_SENDV_SPA, 0) < 0) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_sendv failed: %s", strerror(errno));
       /* gst_sctpsink_stop((GstBaseSink *)sctpsink); */
       // FIXME sometimes the resource is unavailable
+   }
+
+   if (sctpsink->dupl_policy == DUPL_POLICY_DUPLICATE) {
+      spa.sendv_sndinfo.snd_flags |= SCTP_ADDR_OVER;
+      if (usrsctp_sendv(sctpsink->sock,
+               map.data, gst_buffer_get_size(buffer),
+               (struct sockaddr *)&sctpsink->dest_addr_secondary, 1,
+               &spa, (socklen_t)sizeof(struct sctp_sendv_spa),
+               SCTP_SENDV_SPA, 0) < 0) {
+         GST_ERROR_OBJECT(sctpsink, "usrsctp_sendv on secondary failed: %s", strerror(errno));
+      }
    }
 
    print_rtp_header((GstElement *)sctpsink, map.data);
@@ -871,35 +964,6 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
  *    gst_buffer_unref (buf);
  *
  *    return GST_FLOW_OK;
- * } */
-
-/* static gboolean buffer_list_calc_size (GstBuffer ** buf, guint idx, gpointer data) {
- *   guint *p_size = data;
- *   gsize buf_size;
- *
- *   buf_size = gst_buffer_get_size (*buf);
- *   GST_TRACE ("buffer %u has size %" G_GSIZE_FORMAT, idx, buf_size);
- *   *p_size += buf_size;
- *
- *   return TRUE;
- * } */
-
-/* static gboolean buffer_list_copy_data (GstBuffer ** buf, guint idx, gpointer data) {
- *   GstBuffer *dest = data;
- *   guint num, i;
- *
- *   if (idx == 0)
- *     gst_buffer_copy_into (dest, *buf, GST_BUFFER_COPY_METADATA, 0, -1);
- *
- *   num = gst_buffer_n_memory (*buf);
- *   for (i = 0; i < num; ++i) {
- *     GstMemory *mem;
- *
- *     mem = gst_buffer_get_memory (*buf, i);
- *     gst_buffer_append_memory (dest, mem);
- *   }
- *
- *   return TRUE;
  * } */
 
 /* static gboolean sctpsink_iter_render_list (GstBuffer **buffer, guint idx, gpointer user_data) {

@@ -17,7 +17,7 @@ zshexit() {
    [[ ! ${+verbose[1]} ]] && set +x
 } 
 
-zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir V:=variant
+zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir V:=variant -valgrind=valgrind
 
 [[ $# < 1 ]] && norun[1]=1
 (( ${+verbose[1]} )) && set -x
@@ -76,5 +76,9 @@ if (( ${+dot_dir[1]} )); then
 fi
 
 # run sender
-sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} ${~BIN} --variant ${variant[2]:-$default_variant} 2>&1
+sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
+   ${+valgrind[1]:+valgrind} \
+   ${~BIN} \
+   --variant ${variant[2]:-$default_variant} \
+   2>&1
 
