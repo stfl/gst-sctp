@@ -48,6 +48,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <usrsctp.h>
@@ -72,6 +73,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_PR_POLICY               SCTP_PR_SCTP_NONE // 0x0000 /* Reliable transfer */
 #define  SCTP_DEFAULT_PR_VALUE                0 //80  // ms
 
+#define SCTP_PR_SCTP_ALL                      0x000f /* Used for aggregated stats */
+
 #define  SCTP_DEFAULT_UNORDED                 TRUE
 #define  SCTP_DEFAULT_NR_SACK                 TRUE
 
@@ -83,8 +86,13 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_CMT                     FALSE
 #define  SCTP_DEFAULT_DUPL_POLICY             "off"
 
+#define  SCTP_DEFAULT_DEADLINE_US             450000
+#define  SCTP_DEFAULT_DELAY             0
+#define  SCTP_DEFAULT_DELAY_PADDING             0.2 // 20%
+
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2|SCTP_DEBUG_OUTPUT2) */
-#define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
+#define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_TIMER3) //|SCTP_DEBUG_INDATA1|SCTP_DEBUG_INPUT1) //|SCTP_DEBUG_OUTPUT4)
+/* #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL */
 
 #define SCTP_PPID       99
 #define SCTP_SID        1
@@ -106,6 +114,10 @@ enum
    PROP_CMT,
    PROP_BS,
    PROP_DUPL_POLICY,
+   PROP_TS_OFFSET_VALUE,
+   PROP_DEADLINE,
+   PROP_DELAY,
+   PROP_DELAY_PADDING,
    /* FILL ME */
 };
 
@@ -138,6 +150,7 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink, GstBuffer * buffer
 
 /* static void print_rtp_header (GstSctpSink *obj, unsigned char *buffer); */
 static gboolean stats_timer (gpointer priv);
+static void calc_retran_time(GstSctpSink * sink, guint8 *data, struct timeval *rtx_deadline);
 
 /* usrsctp functions */
 
@@ -231,6 +244,26 @@ gst_sctpsink_class_init (GstSctpSinkClass * klass)
             "pr value",
             0, 65535, SCTP_DEFAULT_PR_VALUE,
             G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_TS_OFFSET_VALUE,
+         g_param_spec_uint ("timestamp-offset",  "timestamp offset for RTP timestamp measurements",
+            "timestamp_offset",
+            0, G_MAXUINT, 0,
+            G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_DEADLINE,
+         g_param_spec_uint ("deadline" , "deadline",
+            "deadline in us",
+            0, G_MAXUINT, SCTP_DEFAULT_DEADLINE_US,
+            G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_DELAY,
+         g_param_spec_uint ("delay" , "delay on the paths",
+            "delay on the paths in us",
+            0, G_MAXUINT, SCTP_DEFAULT_DELAY,
+            G_PARAM_READWRITE));
+   g_object_class_install_property (gobject_class, PROP_DELAY_PADDING,
+         g_param_spec_double ("delay-padding" , "addition padding for the delay for DRP rtx dl calc",
+            "padding for the delay",
+            0, 2, SCTP_DEFAULT_DELAY_PADDING,
+            G_PARAM_READWRITE));
 
    gst_element_class_set_static_metadata (GST_ELEMENT_CLASS (klass),
          "SCTP Sink", "Sink/Network",
@@ -272,6 +305,12 @@ gst_sctpsink_init (GstSctpSink * sctpsink)
    /* sctpsink->dest_port_secondary =          SCTP_DEFAULT_DEST_PORT_SECONDARY; */
    sctpsink->src_ip_secondary    = g_strdup(SCTP_DEFAULT_SRC_IP_SECONDARY);
    /* sctpsink->src_port_secondary  =          SCTP_DEFAULT_SRC_PORT_SECONDARY; */
+
+   sctpsink->systemclock = gst_system_clock_obtain();
+   sctpsink->timestamp_offset = 0;
+   sctpsink->deadline = SCTP_DEFAULT_DEADLINE_US;
+   sctpsink->delay = SCTP_DEFAULT_DELAY;
+   sctpsink->delay_padding = SCTP_DEFAULT_DELAY_PADDING;
 
    gst_usrsctp_debug_init();
 }
@@ -330,6 +369,22 @@ gst_sctpsink_set_property (GObject * object, guint property_id,
       case PROP_PR_VALUE:
          sctpsink->pr_value = g_value_get_int (value);
          GST_DEBUG_OBJECT(sctpsink, "set pr value: %d", sctpsink->pr_value);
+         break;
+      case PROP_TS_OFFSET_VALUE:
+         sctpsink->timestamp_offset = g_value_get_uint (value);
+         GST_DEBUG_OBJECT(sctpsink, "set timestamp offset value: %d", sctpsink->timestamp_offset);
+         break;
+      case PROP_DEADLINE:
+         sctpsink->deadline = g_value_get_uint (value);
+         GST_DEBUG_OBJECT(sctpsink, "set dealine value: %dus", sctpsink->deadline);
+         break;
+      case PROP_DELAY:
+         sctpsink->delay = g_value_get_uint (value);
+         GST_DEBUG_OBJECT(sctpsink, "set delay value: %dus", sctpsink->delay);
+         break;
+      case PROP_DELAY_PADDING:
+         sctpsink->delay_padding = g_value_get_double (value);
+         GST_DEBUG_OBJECT(sctpsink, "set delay buffer value: %fus", sctpsink->delay_padding);
          break;
 
       case PROP_PR: {
@@ -398,6 +453,18 @@ gst_sctpsink_get_property (GObject * object, guint property_id,
          break;
       case PROP_PR_VALUE:
          g_value_set_int (value, sctpsink->pr_value);
+         break;
+      case PROP_TS_OFFSET_VALUE:
+         g_value_set_uint (value, sctpsink->timestamp_offset);
+         break;
+      case PROP_DELAY:
+         g_value_set_uint (value, sctpsink->delay);
+         break;
+      case PROP_DEADLINE:
+         g_value_set_uint (value, sctpsink->deadline);
+         break;
+      case PROP_DELAY_PADDING:
+         g_value_set_double (value, sctpsink->delay_padding);
          break;
 
       default:
@@ -569,11 +636,14 @@ gst_sctpsink_start (GstBaseSink * sink)
    if (sctpsink->nr_sack)
       usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
    usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
-   /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
-   /* sctp_path_pf_threshold */ /* leave potentially failed state disabled for now */
+   usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      // Enable I-Flag
+   /* sctp_path_pf_threshold */ /* TODO leave potentially failed state disabled for now */
+
+   usrsctp_sysctl_set_sctp_max_burst_default(0);
+   usrsctp_sysctl_set_sctp_use_cwnd_based_maxburst(0);
+   usrsctp_sysctl_set_sctp_fr_max_burst_default(0);
 
    /* CMT Options */
-
    if (sctpsink->cmt)
       usrsctp_sysctl_set_sctp_cmt_on_off(1);
    if (sctpsink->bs)
@@ -584,7 +654,7 @@ gst_sctpsink_start (GstBaseSink * sink)
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
    }
 
-   if (usrsctp_set_non_blocking(sctpsink->sock, 0)) 
+   if (usrsctp_set_non_blocking(sctpsink->sock, 0))
       GST_ERROR_OBJECT(sctpsink, "usrsctp_set_non_blocking: %s", strerror(errno));
 
    GST_DEBUG_OBJECT(sctpsink, "binding client to: %s, %s port: %d",
@@ -660,6 +730,7 @@ gst_sctpsink_start (GstBaseSink * sink)
       GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SCTP_NODELAY");
    }
 
+
    /* also possible with socket option including time and frequency
       * 8.1.19.  Get or Set Delayed SACK Timer (SCTP_DELAYED_SACK)
       * https://tools.ietf.org/html/rfc6458#section-8.1.19 */
@@ -727,11 +798,11 @@ gst_sctpsink_start (GstBaseSink * sink)
       }
       if (status.sstat_state == SCTP_ESTABLISHED)
          break;
-      else 
+      else
          g_usleep(30000); // 30ms
    }
 
-  
+
    sctpsink->socket_open = TRUE;
    sctpsink->stats_timer_id = g_timeout_add (1000, stats_timer, sctpsink);
    return TRUE;
@@ -741,8 +812,21 @@ static gboolean
 gst_sctpsink_stop (GstBaseSink * sink)
 {
    GstSctpSink *sctpsink = GST_SCTPSINK (sink);
-   struct sctpstat stat;
    GST_DEBUG_OBJECT (sctpsink, "stop");
+
+   struct sctp_prstatus prstat;
+   socklen_t optlen = sizeof(struct sctp_prstatus);
+   memset(&prstat, 0, sizeof(struct sctp_prstatus));
+   prstat.sprstat_assoc_id = SCTP_CURRENT_ASSOC; // ignored for one-to-one
+   prstat.sprstat_policy = SCTP_PR_SCTP_ALL;
+
+   if (usrsctp_getsockopt(sctpsink->sock, IPPROTO_SCTP, SCTP_PR_ASSOC_STATUS,
+            (void *)&prstat, (socklen_t *)&optlen) < 0) {
+      GST_ERROR_OBJECT(sctpsink, "usrsctp_getsockopt SCTP_PR_ASSOC_STATUS: %s", strerror(errno));
+   } else {
+      GST_INFO_OBJECT(sctpsink, "Abandoned already sent Chunks\t\t%lu", prstat.sprstat_abandoned_sent);
+      GST_INFO_OBJECT(sctpsink, "Abandoned not yet sent Chunks\t\t%lu", prstat.sprstat_abandoned_unsent);
+   }
 
    if (usrsctp_shutdown(sctpsink->sock, SHUT_RDWR) < 0)
       GST_ERROR_OBJECT(sctpsink, "usrsctp_shutdown: %s", strerror(errno));
@@ -750,9 +834,50 @@ gst_sctpsink_stop (GstBaseSink * sink)
 
    sctpsink->socket_open = FALSE;
 
+   struct sctpstat stat;
    usrsctp_get_stat(&stat);
-   GST_INFO_OBJECT(sctpsink, "Number of packets (sent/received): (%u/%u)",
-         stat.sctps_outpackets, stat.sctps_inpackets);
+   GST_INFO_OBJECT(sctpsink, "Number of packets sent:\t\t\t%u",             stat.sctps_outpackets);
+   GST_INFO_OBJECT(sctpsink, "Number of packets received:\t\t%u",           stat.sctps_inpackets);
+   GST_INFO_OBJECT(sctpsink, "total output DATA chunks\t\t\t%u",            stat.sctps_senddata);
+   GST_INFO_OBJECT(sctpsink, "total output retransmitted DATA chunks\t%u\t(%4.1f%%)",  stat.sctps_sendretransdata,
+         (double)stat.sctps_sendretransdata/stat.sctps_senddata * 100);
+
+   GST_INFO_OBJECT(sctpsink, "total output fast retran DATA chunks\t%u\t(%4.1f%%)",    stat.sctps_sendfastretrans,
+         (double)stat.sctps_sendfastretrans/stat.sctps_senddata * 100);
+   GST_INFO_OBJECT(sctpsink, "total FR's that happened more than once\t%u", stat.sctps_sendmultfastretrans);
+   GST_INFO_OBJECT(sctpsink, "Chunks marked for retransmission,\t%u",       stat.sctps_fastretransinrtt);
+   GST_INFO_OBJECT(sctpsink, "number of multiple FR in a RTT window\t%u",   stat.sctps_markedretrans);
+   GST_INFO_OBJECT(sctpsink, "Number of early FR timers that fired\t%u",    stat.sctps_timoearlyfr);
+
+   GST_INFO_OBJECT(sctpsink, "output ordered chunks\t\t\t%u",                 stat.sctps_outorderchunks);
+   GST_INFO_OBJECT(sctpsink, "output unordered chunks\t\t\t%u",                 stat.sctps_outunorderchunks);
+	GST_INFO_OBJECT(sctpsink, "output control chunks\t\t\t%u",                 stat.sctps_outcontrolchunks);
+   GST_INFO_OBJECT(sctpsink, "out of the blue\t\t\t\t%u",                       stat.sctps_outoftheblue);
+
+   GST_INFO_OBJECT(sctpsink, "input control chunks\t\t\t%u",                  stat.sctps_incontrolchunks);
+   GST_INFO_OBJECT(sctpsink, "input ordered chunks\t\t\t%u",                  stat.sctps_inorderchunks);
+   GST_INFO_OBJECT(sctpsink, "input unordered chunks\t\t\t%u",                stat.sctps_inunorderchunks);
+
+	GST_INFO_OBJECT(sctpsink, "total output SACKs\t\t\t%u",                      stat.sctps_sendsacks);
+   GST_INFO_OBJECT(sctpsink, "total input SACKs\t\t\t%u",                       stat.sctps_recvsacks);
+
+   GST_INFO_OBJECT(sctpsink, "ip_output error counter\t\t\t%u",                 stat.sctps_senderrors);
+
+   GST_INFO_OBJECT(sctpsink, "Packet drop from middle box\t\t%u",             stat.sctps_pdrpfmbox);
+   GST_INFO_OBJECT(sctpsink, "P-drop from end host\t\t\t%u",                  stat.sctps_pdrpfehos);
+   GST_INFO_OBJECT(sctpsink, "P-drops with data\t\t\t%u",                     stat.sctps_pdrpmbda);
+   GST_INFO_OBJECT(sctpsink, "data drops due to chunk limit reached\t%u",   stat.sctps_datadropchklmt);
+   GST_INFO_OBJECT(sctpsink, "data drops due to rwnd limit reached\t%u",    stat.sctps_datadroprwnd);
+
+   GST_INFO_OBJECT(sctpsink, "sender ran dry of user data on primary\t%u",  stat.sctps_primary_randry);
+
+   GST_INFO_OBJECT(sctpsink, "max burst doesn't allow sending\t\t%u",         stat.sctps_maxburstqueued);
+   GST_INFO_OBJECT(sctpsink, "nagle allowed sending\t\t\t%u",                 stat.sctps_naglesent);
+   GST_INFO_OBJECT(sctpsink, "nagle doesn't allow sending\t\t%u\n",             stat.sctps_naglequeued);
+
+   GST_INFO_OBJECT(sctpsink, "DPR Timer fired\t\t\t\t%u",                 stat.sctps_timodpr);
+   GST_INFO_OBJECT(sctpsink, "DPR Chunks flagged for retran\t\t%u",             stat.sctps_dpr_flagged);
+   /* GST_INFO_OBJECT(sctpsink, "DPR Chunks retran before DL\t%u",             stat.sctps_dpr_pre_deadline); */
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -888,7 +1013,7 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink,
    /* seq = gst_rtp_buffer_get_seq((GstRTPBuffer *)buffer); */
    /* GST_TRACE_OBJECT(sctpsink, "seq: %u", seq); */
    // FIXME linker problem: undefined reference...
-   
+
    GstMapInfo map;
    gst_buffer_map (buffer, &map, GST_MAP_READ);
    GST_TRACE_OBJECT(sctpsink, "got a buffer of size:%4lu", gst_buffer_get_size(buffer));
@@ -911,6 +1036,11 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink,
       spa.sendv_prinfo.pr_policy = sctpsink->pr_policy;
       spa.sendv_prinfo.pr_value = sctpsink->pr_value;
       spa.sendv_flags |= SCTP_SEND_PRINFO_VALID;
+   }
+
+   if (sctpsink->dupl_policy == DUPL_POLICY_DPR) {
+      calc_retran_time(sctpsink, map.data, &spa.sendv_dprinfo.deadline);
+      spa.sendv_dprinfo.dpr_enabled = 1;
    }
 
    /* FIXME SCTP_SACK_IMMEDIATELY in the snd_flags field of the struct sctp_sndinfo */
@@ -942,6 +1072,27 @@ static GstFlowReturn gst_sctpsink_render (GstBaseSink * sink,
    gst_buffer_unmap (buffer, &map);
 
    return GST_FLOW_OK;
+}
+
+static void calc_retran_time(GstSctpSink * sctpsink, guint8 *data, struct timeval *rtx_deadline) {
+      RTPHeader *rtph = (RTPHeader *)data;
+      guint32 rtp_timestamp = ntohl(rtph->TS);
+
+      GstClockTime rtp_timestamp_unscaled = gst_util_uint64_scale_int ((guint64)rtp_timestamp,
+            GST_SECOND, (gint)90000);
+      rtp_timestamp_unscaled += (gint)sctpsink->timestamp_offset * GST_SECOND +
+         (sctpsink->deadline - (gdouble)sctpsink->delay * (1 + sctpsink->delay_padding)) * 1000; // ns
+
+      rtx_deadline->tv_sec =  (long int) rtp_timestamp_unscaled / 1000000000;
+      rtx_deadline->tv_usec = (long int)(rtp_timestamp_unscaled % 1000000000) / 1000;
+
+      /* struct timeval now;
+       * gettimeofday(&now, NULL);
+       * GST_DEBUG_OBJECT(sctpsink, "now: [ %ld.%06ld ] rtp_unscaled: %lu diff: %ldms, [ %ld.%06ld ]",
+       *       now.tv_sec, now.tv_usec, rtp_timestamp_unscaled,
+       *       (rtp_timestamp_unscaled - (now.tv_sec * GST_SECOND + now.tv_usec * 1000)) / GST_MSECOND,
+       *       rtx_deadline->tv_sec, rtx_deadline->tv_usec); */
+   return;
 }
 
 /** Render a BufferList */

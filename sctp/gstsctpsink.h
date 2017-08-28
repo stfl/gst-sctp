@@ -72,8 +72,16 @@ struct _GstSctpSink
   gint   pr_policy;
   gint   pr_value;
 
+  guint32   timestamp_offset;
+  guint32   deadline;
+  guint32   delay;
+  gdouble   delay_padding;
+
   struct socket *sock;
   gboolean  socket_open;
+
+  GstClock *systemclock;
+
   /* our sockets */
   /* GSocket   *used_socket; */
   /* GInetSocketAddress *addr; */

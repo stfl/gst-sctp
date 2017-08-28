@@ -27,6 +27,7 @@
 #include <gst/gst.h>
 #include <stdlib.h>
 #include <glib.h>
+#include <sys/time.h>
 
 #include <usrsctp.h>
 #include <string.h>
@@ -35,6 +36,8 @@
 
 GST_DEBUG_CATEGORY_STATIC (rtpsctpsend);
 #define GST_CAT_DEFAULT rtpsctpsend
+
+#define GST_FRAME_COUNT_DEFAULT "10"
 
 typedef struct __GstRtpSctpSender _GstRtpSctpSender;
 struct __GstRtpSctpSender
@@ -74,11 +77,20 @@ enum PipelineVariant {
 gboolean verbose;
 gchar *variant_string = "single"; // set a default
 enum PipelineVariant variant;
+gchar *num_buffers = GST_FRAME_COUNT_DEFAULT;
+gchar *timestamp_offset = NULL;
+gchar *deadline = NULL;
+gchar *path_delay = NULL;
 
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
+   {"num-buffers", 'n', 0, G_OPTION_ARG_STRING, &num_buffers, "frame count", NULL},
    {"variant", 'V', 0, G_OPTION_ARG_STRING, &variant_string,
-      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dbr " },
+      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dpr " },
+   {"timestamp-offset", 'T', 0, G_OPTION_ARG_STRING, &timestamp_offset,
+      "timestamp offset to use for systemtime RTP timestamp", NULL},
+   {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline, "", NULL},
+   {"path-delay", 'P', 0, G_OPTION_ARG_STRING, &path_delay, "", NULL},
    {NULL}
 };
 
@@ -99,6 +111,11 @@ main (int argc, char *argv[])
       exit (1);
    }
 
+   if (timestamp_offset == NULL || deadline == NULL) {
+      g_print ("timestamp-offset and deadline requiered\n");
+      exit(1);
+   }
+
    if (0 == strncmp(variant_string, "udp", 10)){
       variant = PIPELINE_UDP;
    } else if (0 == strncmp(variant_string, "single", 10)){
@@ -107,7 +124,7 @@ main (int argc, char *argv[])
       variant = PIPELINE_CMT;
    } else if (0 == strncmp(variant_string, "dupl", 10)){
       variant = PIPELINE_CMT_DUPL;
-   } else if (0 == strncmp(variant_string, "dbr", 10)){
+   } else if (0 == strncmp(variant_string, "dpr", 10)){
       variant = PIPELINE_CMT_DPR;
    } else {
       g_error("unknown variant: %s\n", variant_string);
@@ -179,12 +196,13 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    /* create element */
    GstElement *source = gst_element_factory_make("videotestsrc", "source");
    gst_util_set_object_arg(G_OBJECT(source), "is-live", "true");
+   gst_util_set_object_arg(G_OBJECT(source), "do-timestamp", "true");
    gst_util_set_object_arg(G_OBJECT(source), "pattern", "gradient");
-   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", "100");
+   gst_util_set_object_arg(G_OBJECT(source), "num-buffers", num_buffers);
 
    GstCaps *src_caps = gst_caps_new_simple ("video/x-raw",
          "format",     G_TYPE_STRING,      "RGBA",
-         "width",      G_TYPE_INT,         90,
+         "width",      G_TYPE_INT,         60,
          "height",     G_TYPE_INT,         60,
          "framerate",  GST_TYPE_FRACTION,  24,  1,
          NULL);
@@ -197,7 +215,37 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 
    GstElement *rtppay = gst_element_factory_make("rtpvrawpay", "rtppay");
    gst_util_set_object_arg(G_OBJECT(rtppay), "mtu", "1400");
+   gst_util_set_object_arg(G_OBJECT(rtppay), "perfect-rtptime",  "true");
+   gst_util_set_object_arg(G_OBJECT(rtppay), "seqnum-offset",  "0");
+   gst_util_set_object_arg(G_OBJECT(rtppay), "timestamp-offset", timestamp_offset);
 
+   /* struct timeval now; */
+   /* gettimeofday(&now, NULL); */
+   /* GValue val = G_VALUE_INIT; */
+   /* g_value_init (&val, G_TYPE_UINT); */
+   /* g_value_set_uint (&val, (unsigned int)now.tv_sec); */
+   /* g_object_set_property (G_OBJECT (rtppay), "timestamp-offset", "1503580849"); */
+   /* GST_DEBUG_OBJECT(pipeline, "timestamp_offset: ", .data); */
+
+   /* if ((4294 - (now.tv_sec - 1503580849)) < 500) { */
+   /*    GST_ERROR_OBJECT(pipeline, "The TS offset might get tight!!! only %us left\t use: %u", */
+   /*          (unsigned int) (4294 - (now.tv_sec - 1503580849)), (unsigned int)now.tv_sec); */
+   /*    return; */
+   /* } */
+
+
+   /* GString ts_off_string; // = g_string_new(); */
+   /* g_string_printf(&ts_off_string, "%u", (uint32_t) now.tv_sec); */
+   /* g_string_free(&ts_off_string, TRUE); */
+
+   /* GstClockTime now = gst_clock_get_time(gst_system_clock_obtain());
+    * GString time_string;
+    * g_string_printf(&time_string, "%lu", now);
+    * gst_util_set_object_arg(G_OBJECT(rtppay), "timestamp-offset",  time_string.str);
+    * GST_ERROR_OBJECT(pipeline, "%lu > %s", now, time_string.str); */
+   /* g_string_free(&time_string, TRUE); */
+ 
+ 
    GstElement *queue = gst_element_factory_make("queue2", "queue");
 
    GstElement *sink = gst_element_factory_make("sctpsink", "sink");
@@ -206,6 +254,8 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
          /* "port",    1117, */
          /* NULL); */
 
+   gst_util_set_object_arg(G_OBJECT(sink), "timestamp-offset", timestamp_offset);
+   gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
 
    /* FIXME not yet implemented >> set statically in the plugin */
    /* gst_util_set_object_arg(G_OBJECT(sink), "unorderd",  "true"); */
@@ -216,26 +266,31 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    /* gst_util_set_object_arg(G_OBJECT(sink), "delayed-sack-frequency",  "2"); */
    /* gst_util_set_object_arg(G_OBJECT(sink), "heartbeat-interval",  "5000"); */
 
-   gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-primary",  "1234"); */
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-primary",  "2345"); */
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-secondary",  "4321"); */
    /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-secondary",  "5432"); */
 
    if (variant == PIPELINE_CMT
-       /* || variant == PIPELINE_CMT_DUPL */
-       || variant == PIPELINE_CMT_DPR
-       ) {
+         || variant == PIPELINE_CMT_DPR
+      ){
       gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
       gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
-   }
+   } 
 
    if (variant == PIPELINE_CMT_DUPL) {
       gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx");
       gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0");
+   } else if (variant == PIPELINE_CMT_DPR) {
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "100");
+      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
+      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "1"); */
    } else {
       gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
       gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "80");
+      // FIXME make pr_value a variable here
+      // make it an attribute of sctpsink
    }
 
    if (variant == PIPELINE_CMT_DPR) {
@@ -264,6 +319,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    if (!gst_element_link(rtppay, queue)) {
       g_critical ("Failed to link rtppay, queue'\n");
    }
+
 
    if (!gst_element_link(queue, sink)) {
       g_critical ("Failed to link queue, sink'\n");
@@ -338,6 +394,7 @@ static void
 gst_RtpSctpSender_handle_ready_to_paused (_GstRtpSctpSender *
       RtpSctpSender)
 {
+
    if (!RtpSctpSender->paused_for_buffering) {
       gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_PLAYING);
    }

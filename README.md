@@ -82,7 +82,7 @@ dot dot/receiver.dot -Tpng -o dot/reveiver.png
 
 # Setup for Experiments
 
-briefly:
+## Overview 
 
 two VMs with network interfaces like in the following. It has to be one global and one private IP in
 order to make the source IP selection work in usrsctp. This is a limitation in usrsctp in this
@@ -93,3 +93,35 @@ specific setup. UDP encapsulation might help with that.
 12.0.0.1     <--->  12.0.0.2
 ```
 
+## NFS Setup
+
+*/etc/fstab* on Receiver
+```
+/home/slendl/Projects/gst/gst-sctp /srv/nfs/gst-sctp            none bind 0 0
+/usr/lib/gstreamer-1.0/            /srv/nfs/gststream-1.0-build none bind 0 0
+```
+
+*/etc/exports*
+```
+/srv/nfs                     192.168.153.128/24(rw,fsid=root,no_subtree_check)
+/srv/nfs/gst-sctp            192.168.153.128/24(rw,no_subtree_check,nohide)
+/srv/nfs/gststream-1.0-build 192.168.153.128/24(rw,no_subtree_check,nohide)
+```
+
+*/etc/fstab* on Sender
+```
+192.168.153.130:/gst-sctp            /home/slendl/Projects/gst/gst-sctp nfs noauto,x-systemd.automount,x-systemd.device-timeout=10,timeo=14,x-systemd.idle-timeout=1min 0 0
+192.168.153.130:/gstreamer-1.0-build /usr/lib/gstreamer-1.0/            nfs noauto,x-systemd.automount,x-systemd.device-timeout=10,timeo=14,x-systemd.idle-timeout=1min 0 0
+```
+
+```bash
+bp=/home/slendl/Projects/gst/gst-plugins-base/build; \
+gp=/home/slendl/Projects/gst/gst-plugins-good/build; \
+(cd $bp ninja && sudo ninja install >/dev/null) && \
+scp $bp/gst-libs/gst/rtp/GstRtp-1.0.gir root@clone:/usr/share/gir-1.0/ &
+scp $bp/gst-libs/gst/rtp/GstRtp-1.0.typelib root@clone:/usr/lib/girrepository-1.0 &
+(cd $gp; ninja && sudo ninja install >/dev/null) && \
+scp $gp/gst/rtp/libgstrtp.so $bp/gst-libs/gst/rtp/libgstrtp-1.0.so*
+root@clone:/usr/lib/gstreamer-1.0
+scp  root@clone:/usr/share/gir-1.0/
+```

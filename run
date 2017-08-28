@@ -1,8 +1,11 @@
 #!/usr/bin/env zsh
 
 PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
-export GST_PLUGIN_PATH=${PROJECT_DIR}/build
+export GST_PLUGIN_PATH="${PROJECT_DIR}/build"
+# export GST_PLUGIN_PATH="/usr/lib/gstreamer-1.0:${PROJECT_DIR}/build"
+# export GST_PLUGIN_PATH="${PROJECT_DIR}/../gst-plugins-good/install/lib/gstreamer-1.0:${PROJECT_DIR}/build"
 LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
+IP_NTP_SERVER=192.168.153.130
 
 dot_dir_default=${PROJECT_DIR}/dot
 gst_debug_default=""
@@ -17,7 +20,9 @@ zshexit() {
    [[ ! ${+verbose[1]} ]] && set +x
 } 
 
-zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir V:=variant -valgrind=valgrind
+zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir \
+                    V:=variant -valgrind=valgrind n:=num_buffers T:=timestamp_offset -ntp=ntp \
+                    D:=deadline -delay:=delay
 
 [[ $# < 1 ]] && norun[1]=1
 (( ${+verbose[1]} )) && set -x
@@ -63,6 +68,12 @@ if (( ${+build[1]} )); then
    )
 fi
 
+if (( ${+ntp[1]} )); then
+   sudo systemctl stop ntpd.service
+   sudo ntpdate $IP_NTP_SERVER
+   sudo systemctl start ntpd.service
+fi
+
 if (( ${+norun[1]} )); then
    exit 0
 fi
@@ -75,10 +86,19 @@ if (( ${+dot_dir[1]} )); then
    export GST_DEBUG_DUMP_DOT_DIR=$DOT_DIR
 fi
 
+if (( $(( 4294 - ( $(date +%s) - ${timestamp_offset[2]} ) )) < 500 )); then
+   echo "TS offset error: $(( 4294 - ( $(date +%s) - ${timestamp_offset[2]} ) )) left\tuse:  $(date +%s)"
+   exit 1
+fi
+
 # run sender
 sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
    ${+valgrind[1]:+valgrind} \
    ${~BIN} \
    --variant ${variant[2]:-$default_variant} \
+   --timestamp-offset ${timestamp_offset[2]} \
+   --deadline $(( ${deadline[2]} * 1000 )) \
+   ${+delay[2]:+--path-delay} ${+delay[2]:+$(( ${delay[2]} * 1000 ))} \
+   ${+num_buffers[2]:+-n} ${+num_buffers[2]:+${num_buffers[2]}} \
    2>&1
 

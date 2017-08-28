@@ -77,11 +77,17 @@ enum PipelineVariant {
 gboolean verbose;
 gchar *variant_string = "single"; // set a default
 enum PipelineVariant variant;
+gchar *timestamp_offset = NULL;
+gchar *deadline = NULL;
 
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
    {"variant", 'V', 0, G_OPTION_ARG_STRING, &variant_string,
       "define the Variant for the experiment to use", " udp|single|cmt|dupl|dbr " },
+   {"timestamp-offset", 'T', 0, G_OPTION_ARG_STRING, &timestamp_offset,
+      "timestamp offset to use for systemtime RTP timestamp", NULL},
+   {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline,
+      "", NULL},
    {NULL}
 
 };
@@ -101,6 +107,11 @@ main (int argc, char *argv[])
       g_print ("option parsing failed: %s\n", error->message);
       g_clear_error (&error);
       exit (1);
+   }
+
+   if (timestamp_offset == NULL || deadline == NULL) {
+      g_print ("timestamp-offset and deadline requiered\n");
+      exit(1);
    }
 
    if (0 == strncmp(variant_string, "udp", 10)){
@@ -202,13 +213,17 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          NULL);
 
    GstElement *rtpdepay = gst_element_factory_make("rtpvrawdepay", "rtpdepay");
+   gst_util_set_object_arg(G_OBJECT(rtpdepay), "timestamp-offset", timestamp_offset);
+   gst_util_set_object_arg(G_OBJECT(rtpdepay), "deadline", deadline);
 
    GstElement *jitterbuffer = gst_element_factory_make("rtpjitterbuffer", "jitterbuffer");
-   g_object_set(G_OBJECT(jitterbuffer),
-         "latency",            100,
-         "max-dropout-time",   100,
-         "max-misorder-time",  100,  // ms
-         NULL);
+   gst_util_set_object_arg(G_OBJECT(jitterbuffer), "systime-offset", timestamp_offset);
+   gst_util_set_object_arg(G_OBJECT(jitterbuffer), "deadline", deadline);
+   /* g_object_set(G_OBJECT(jitterbuffer),
+    *       "latency",            100,
+    *       "max-dropout-time",   100,
+    *       "max-misorder-time",  100,  // ms
+    *       NULL); */
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
    GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
@@ -331,8 +346,38 @@ static void
 gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
       RtpSctpReceiver)
 {
-   g_main_loop_quit (RtpSctpReceiver->main_loop);
+   GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
+   guint64 num_pushed, num_lost, num_late, num_old_dropped, num_duplicate, num_deadline_missed,
+           num_deadline_hit;
+   gdouble avg_jitter;
+   GstStructure *jbuf_stats;
 
+   // Jitter Bufer Stats
+   g_object_get(G_OBJECT(jbuf), "stats", &jbuf_stats, NULL);
+   if ( ! gst_structure_get (jbuf_stats,
+            "num-pushed",     G_TYPE_UINT64, &num_pushed,
+            "num-lost",       G_TYPE_UINT64, &num_lost,
+            "num-late",       G_TYPE_UINT64, &num_late,
+            "num-duplicates", G_TYPE_UINT64, &num_duplicate,
+            "num-old-dropped", G_TYPE_UINT64, &num_old_dropped,
+            "num-deadline-missed", G_TYPE_UINT64, &num_deadline_missed,
+            "num-deadline-hit", G_TYPE_UINT64, &num_deadline_hit,
+            "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
+            NULL)) {
+      g_error("error getting the jitterbuffer stats");
+   }
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Jitterbuffer stats:");
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Average Jitter:\t\t%.3f", avg_jitter);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Pushed:\t\t%ld", num_pushed);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Lost:\t\t%ld", num_lost);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Late:\t\t%ld", num_late);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Duplicate:\t\t%ld", num_duplicate);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Old Dropped:\t%ld\n", num_old_dropped);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Missed:\t%ld", num_deadline_missed);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Hit:\t%ld", num_deadline_hit);
+
+
+   g_main_loop_quit (RtpSctpReceiver->main_loop);
 }
 
 

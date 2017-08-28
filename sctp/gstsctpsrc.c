@@ -65,17 +65,16 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_SRC_IP_PRIMARY       "192.168.0.1"
 #define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.0.0.2"
 #define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.0.0.1"
-#define  SCTP_DEFAULT_DEST_PORT    2222
-#define  SCTP_DEFAULT_SRC_PORT     1111
+#define  SCTP_DEFAULT_DEST_PORT            2222
+#define  SCTP_DEFAULT_SRC_PORT             1111
 
+#define SCTP_DEFAULT_ASSOC_VALUE           47
 
-#define SCTP_DEFAULT_ASSOC_VALUE 47
+#define  SCTP_DEFAULT_BS                   FALSE
+#define  SCTP_DEFAULT_CMT                  FALSE
 
-#define  SCTP_DEFAULT_BS                      FALSE
-#define  SCTP_DEFAULT_CMT                     FALSE
-
-#define  SCTP_DEFAULT_UNORDED                 TRUE
-#define  SCTP_DEFAULT_NR_SACK                 TRUE
+#define  SCTP_DEFAULT_UNORDED              TRUE
+#define  SCTP_DEFAULT_NR_SACK              TRUE
 
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2) */
 #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
@@ -135,6 +134,7 @@ enum {
    PROP_UNORDERED,
    PROP_CMT,
    PROP_BS,
+   PROP_TS_OFFSET_VALUE,
    /* FILL ME */
 };
 
@@ -219,6 +219,12 @@ static void gst_sctpsrc_class_init(GstSctpSrcClass *klass) {
     *          "Stats (struct sctpsrc *)",
     *          G_PARAM_READABLE)); */
 
+   g_object_class_install_property (gobject_class, PROP_TS_OFFSET_VALUE,
+         g_param_spec_uint ("timestamp-offset",  "timestamp offset for RTP timestamp measurements",
+            "timestamp_offset",
+            0, G_MAXUINT, 0,
+            G_PARAM_READWRITE));
+
    g_object_class_install_property(gobject_class, PROP_PUSHED,
        g_param_spec_uint64("pushed", "packets pushed", "Packets pushed to next element",
           0, G_MAXUINT64, 0, G_PARAM_READABLE));
@@ -257,6 +263,7 @@ static void gst_sctpsrc_init(GstSctpSrc *sctpsrc) {
 
    sctpsrc->dest_ip_secondary = g_strdup(SCTP_DEFAULT_DEST_IP_SECONDARY);
    sctpsrc->src_ip_secondary = g_strdup(SCTP_DEFAULT_SRC_IP_SECONDARY);
+   sctpsrc->timestamp_offset = 0;
 }
 
 void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -286,6 +293,10 @@ void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *
       case PROP_BS:
          sctpsrc->bs = g_value_get_boolean (value);
          GST_DEBUG_OBJECT(sctpsrc, "set Buffer Split:%s", sctpsrc->bs ? "TRUE" : "FALSE");
+         break;
+      case PROP_TS_OFFSET_VALUE:
+         sctpsrc->timestamp_offset = g_value_get_uint (value);
+         GST_DEBUG_OBJECT(sctpsrc, "set timestamp offset value: %d", sctpsrc->timestamp_offset);
          break;
    default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -323,6 +334,9 @@ void gst_sctpsrc_get_property(GObject *object, guint property_id, GValue *value,
       case PROP_BS:
          g_value_set_boolean (value, sctpsrc->bs);
       break;
+      case PROP_TS_OFFSET_VALUE:
+         g_value_set_uint (value, sctpsrc->timestamp_offset);
+         break;
 
    default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID(object, property_id, pspec);
@@ -600,10 +614,43 @@ static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
    GstSctpSrc *sctpsrc = GST_SCTPSRC(src);
    GST_DEBUG_OBJECT(sctpsrc, "stop");
 
-   if (! sctpsrc->socket_open)
-      return TRUE;
+   struct sctpstat stat;
+   usrsctp_get_stat(&stat);
+   GST_INFO_OBJECT(sctpsrc, "Number of packets sent:\t\t\t%u",             stat.sctps_outpackets);
+   GST_INFO_OBJECT(sctpsrc, "Number of packets received:\t\t%u",           stat.sctps_inpackets);
+   GST_INFO_OBJECT(sctpsrc, "total input DATA chunks\t\t\t%u",             stat.sctps_recvdata);
+   GST_INFO_OBJECT(sctpsrc, "Received duplicate Data:\t\t\t%u\t(%4.1f%%)",      stat.sctps_recvdupdata,
+         (double)stat.sctps_recvdupdata/(double)stat.sctps_recvdata * 100);
+
+   GST_INFO_OBJECT(sctpsrc, "output ordered chunks\t\t\t%u",               stat.sctps_outorderchunks);
+   GST_INFO_OBJECT(sctpsrc, "output unordered chunks\t\t\t%u",             stat.sctps_outunorderchunks);
+	GST_INFO_OBJECT(sctpsrc, "output control chunks\t\t\t%u",               stat.sctps_outcontrolchunks);
+   GST_INFO_OBJECT(sctpsrc, "out of the blue\t\t\t\t%u",                   stat.sctps_outoftheblue);
+
+   GST_INFO_OBJECT(sctpsrc, "input control chunks\t\t\t%u",                stat.sctps_incontrolchunks);
+   GST_INFO_OBJECT(sctpsrc, "input ordered chunks\t\t\t%u",                stat.sctps_inorderchunks);
+   GST_INFO_OBJECT(sctpsrc, "input unordered chunks\t\t\t%u",              stat.sctps_inunorderchunks);
+
+	GST_INFO_OBJECT(sctpsrc, "total output SACKs\t\t\t%u",                  stat.sctps_sendsacks);
+   GST_INFO_OBJECT(sctpsrc, "total input SACKs\t\t\t%u",                   stat.sctps_recvsacks);
+
+   GST_INFO_OBJECT(sctpsrc, "ip_output error counter\t\t\t%u",             stat.sctps_senderrors);
+
+   GST_INFO_OBJECT(sctpsrc, "Packet drop from middle box\t\t%u",           stat.sctps_pdrpfmbox);
+   GST_INFO_OBJECT(sctpsrc, "P-drop from end host\t\t\t%u",                stat.sctps_pdrpfehos);
+   GST_INFO_OBJECT(sctpsrc, "P-drops with data\t\t\t%u",                   stat.sctps_pdrpmbda);
+
+   GST_INFO_OBJECT(sctpsrc, "data drops due to chunk limit reached\t%u", stat.sctps_datadropchklmt);
+   GST_INFO_OBJECT(sctpsrc, "data drops due to rwnd limit reached\t%u",  stat.sctps_datadroprwnd);
+   GST_INFO_OBJECT(sctpsrc, "max burst doesn't allow sending\t\t%u",       stat.sctps_maxburstqueued);
+   GST_INFO_OBJECT(sctpsrc, "nagle allowed sending\t\t\t%u",               stat.sctps_naglesent);
+   GST_INFO_OBJECT(sctpsrc, "nagle doesn't allow sending\t\t%u",           stat.sctps_naglequeued);
 
    usrsctp_close(sctpsrc->sock);
+
+
+   if (! sctpsrc->socket_open)
+      return TRUE;
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -712,6 +759,7 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
          switch (sn->sn_header.sn_type) {
             case SCTP_SHUTDOWN_EVENT:
                GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
+
                /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
                return GST_FLOW_EOS;
             case SCTP_REMOTE_ERROR:

@@ -45,6 +45,7 @@ struct _GstSctpSrc {
   gint dest_port;
   gint src_port;
 
+  guint32 timestamp_offset;
 
   /* gchar     *peer; */
   /* gint       peer_port; */
