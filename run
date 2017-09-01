@@ -1,11 +1,12 @@
 #!/usr/bin/env zsh
 
 PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
-export GST_PLUGIN_PATH="${PROJECT_DIR}/build"
+
 # export GST_PLUGIN_PATH="/usr/lib/gstreamer-1.0:${PROJECT_DIR}/build"
 # export GST_PLUGIN_PATH="${PROJECT_DIR}/../gst-plugins-good/install/lib/gstreamer-1.0:${PROJECT_DIR}/build"
 LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
 IP_NTP_SERVER=192.168.153.130
+
 
 dot_dir_default=${PROJECT_DIR}/dot
 gst_debug_default=""
@@ -22,9 +23,9 @@ zshexit() {
 
 zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir \
                     V:=variant -valgrind=valgrind n:=num_buffers T:=timestamp_offset -ntp=ntp \
-                    D:=deadline -delay:=delay
+                    D:=deadline -delay:=delay -padding:=delay_padding
 
-[[ $# < 1 ]] && norun[1]=1
+[[ $# < 2 ]] && norun[1]=1
 (( ${+verbose[1]} )) && set -x
 
 if (( !${+GST_DEBUG} )); then
@@ -32,11 +33,13 @@ if (( !${+GST_DEBUG} )); then
    export GST_DEBUG=${debug_string[2]:-${gst_debug_default}}
 fi
 
+TARGET=
 if (( ! ${+norun[1]} )); then
-   try_bin=$1
+   TARGET=$1
+   try_bin=${1}/${2}
    if [[ -x $try_bin ]]; then
       echo "found $try_bin"
-      BIN=$(pwd)/$try_bin
+      BIN=$try_bin
    else
       BIN="${PROJECT_DIR}/**/${try_bin}(*[1])"
       # if [[ ! -f ${~BIN} ]]; then
@@ -46,27 +49,29 @@ if (( ! ${+norun[1]} )); then
    fi
 fi
 
-# fetch
-if (( ${+fetch[1]} )); then
-   echo -e "\n####Fetching from git repo...."
-   (cd ${PROJECT_DIR}
-   git pull origin master
-   )
-fi 
+export GST_PLUGIN_PATH=${TARGET}
 
-# build usrsctp
-if (( ${+usrsctp[1]} )); then
-   echo -e "\n####Building usrsctp...."
-   cmake --build ${PROJECT_DIR}/usrsctp/build
-fi
+# # fetch
+# if (( ${+fetch[1]} )); then
+#    echo -e "\n####Fetching from git repo...."
+#    (cd ${PROJECT_DIR}
+#    git pull origin master
+#    )
+# fi
 
-# build gst-sctp
-if (( ${+build[1]} )); then
-   echo -e "\n####Building gst-sctp...."
-   (cd ${PROJECT_DIR}/build;
-   ninja install
-   )
-fi
+# # build usrsctp
+# if (( ${+usrsctp[1]} )); then
+#    echo -e "\n####Building usrsctp...."
+#    cmake --build ${PROJECT_DIR}/usrsctp/build
+# fi
+
+# # build gst-sctp
+# if (( ${+build[1]} )); then
+#    echo -e "\n####Building gst-sctp...."
+#    (cd ${PROJECT_DIR}/build;
+#    ninja install
+#    )
+# fi
 
 if (( ${+ntp[1]} )); then
    sudo systemctl stop ntpd.service
@@ -99,6 +104,7 @@ sudo -E LD_LIBRARY_PATH=${LD_LIBRARY_PATH} \
    --timestamp-offset ${timestamp_offset[2]} \
    --deadline $(( ${deadline[2]} * 1000 )) \
    ${+delay[2]:+--path-delay} ${+delay[2]:+$(( ${delay[2]} * 1000 ))} \
+   ${+delay_padding[2]:+--delay-padding} ${+delay_padding[2]:+$(( ${delay_padding[2]} * 1000 ))} \
    ${+num_buffers[2]:+-n} ${+num_buffers[2]:+${num_buffers[2]}} \
    2>&1
 

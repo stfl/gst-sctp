@@ -1,0 +1,83 @@
+#!/usr/bin/env zsh
+
+PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
+RUN=${PROJECT_DIR}/run
+SENDER=rtpsctp/rtpsctpsend
+RECEIVER=rtpsctp/rtpsctprecv
+
+TARGET=${PROJECT_DIR}/build
+TARGET_DEBUG=${PROJECT_DIR}/build_debug
+
+DEBUG_SENDER="sctpsink:4,rtpsctpsend:4"
+DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4"
+
+IP_SENDER=192.168.153.132
+IP_RECEIVER=192.168.153.130
+PHY1=ens37
+PHY2=ens38
+
+TRAPINT() {
+  print "Caught SIGINT, aborting."
+  kill ${${(v)jobstates##*:*:}%=*}
+  sudo killall rtpsctprecv
+  ssh root@${IP_SENDER} 'killall rtpsctpsend'
+  wait
+  return -1
+}
+
+TRAPEXIT() {
+   [[ ! ${+verbose[1]} ]] && set +x
+}
+
+zparseopts -D -E -- R=norun v=verbose n:=num_runs d=debug -ntp=ntp
+
+if (( ${+verbose[1]} )); then
+   set -x
+fi
+
+if (( ${+debug[1]} )); then
+     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8"
+   TARGET=$TARGET_DEBUG
+fi
+
+local variant=${VARIANT:-dpr}
+local delay=${DELAY:-30}
+local deadline=${DEADLINE:-450}
+local num=${NUM:-100}
+local drop=${DROP:-5}
+local padding=${PADDING:-60}
+local runs=${num_runs[2]:-1}
+
+count=0
+while (( $count < $runs )) ; do
+   echo "\033[0;31msetting delay to: ${delay}\033[0m"
+   ssh root@${IP_SENDER} "tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms"
+   ssh root@${IP_SENDER} "tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms"
+   sudo tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms
+   sudo tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms
+
+   local systime=$(date +%s)
+
+   (
+      echo -e "\033[0;31m------- Receiver starting\033[0m"
+      $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -D $deadline -T $systime
+      echo -e "\033[0;32m------- Receiver finished\033[0m"
+   ) &
+
+   # if [[ $count == 0 ]] && (( !${+debug[1]} )); then
+   #    ntp="--ntp"
+   # else
+   #    ntp=
+   # fi
+   (
+      echo -e "\033[0;31m------- Sender starting\033[0m"
+      ssh root@${IP_SENDER} "$RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
+      echo -e "\033[0;32m------- Sender finished\033[0m"
+   ) &
+
+   wait
+   (( count++ ))
+   echo "\033[0;32mrun $count finished\033[0m"
+done
+
