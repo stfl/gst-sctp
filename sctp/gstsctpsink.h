@@ -75,7 +75,7 @@ struct _GstSctpSink
   guint32   timestamp_offset;
   guint32   deadline;
   guint32   delay;
-  gdouble   delay_padding;
+  guint32   delay_padding;
 
   struct socket *sock;
   gboolean  socket_open;

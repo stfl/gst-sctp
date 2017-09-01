@@ -77,7 +77,8 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_NR_SACK              TRUE
 
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2) */
-#define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
+/* #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL */
+#define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_NONE
 
 /* prototypes */
 static void gst_sctpsrc_set_property(GObject *object, guint property_id, const GValue *value,
@@ -433,7 +434,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    const int on = 1;
 
    usrsctp_init(sctpsrc->udp_encaps ? sctpsrc->udp_encaps_port_local : 0, NULL,
-                usrsctp_debug_printf);
+                usrsctp_debug_printf_receiver);
 
 #ifdef SCTP_DEBUG
    usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);

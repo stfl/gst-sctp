@@ -12,7 +12,8 @@ GST_EXPORT void hexDump (char *desc, void *addr, int len);
 GST_EXPORT void gst_usrsctp_debug_init(void);
 void print_rtp_header (GstElement *obj, unsigned char *buffer);
 int usrsctp_addrs_to_string(struct sockaddr *addrs, int n, GString *str);
-void usrsctp_debug_printf(const char *format, ...);
+void usrsctp_debug_printf_sender(const char *format, ...);
+void usrsctp_debug_printf_receiver(const char *format, ...);
 
 #ifdef __WIN32__
 #define PACKED

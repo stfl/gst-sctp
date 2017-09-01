@@ -23,33 +23,49 @@
   }									\
 }G_STMT_END
 
-GST_DEBUG_CATEGORY_STATIC (GST_CAT_USRSCTP);
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_USRSCTP_SND);
+GST_DEBUG_CATEGORY_STATIC (GST_CAT_USRSCTP_RCV);
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_SCTPUTILS);
 
 void gst_usrsctp_debug_init(){
-   GST_DEBUG_CATEGORY_INIT (GST_CAT_USRSCTP, "usrsctp",
-         GST_DEBUG_FG_GREEN,
-         "usrsctp");
+   GST_DEBUG_CATEGORY_INIT (GST_CAT_USRSCTP_SND, "usrsctpsnd",
+         GST_DEBUG_FG_BLUE,
+         "usrsctp sender");
+
+   GST_DEBUG_CATEGORY_INIT (GST_CAT_USRSCTP_RCV, "usrsctprecv",
+         GST_DEBUG_FG_CYAN,
+         "usrsctp receiver");
 
    GST_DEBUG_CATEGORY_INIT (GST_CAT_SCTPUTILS, "sctputils",
          GST_DEBUG_FG_MAGENTA,
          "sctputils");
 }
 
-void usrsctp_debug_printf(const char *format, ...) {
+void usrsctp_debug_printf_sender(const char *format, ...) {
    va_list ap;
    gchar *out;
 
    va_start(ap, format);
    out = gst_info_strdup_vprintf(format, ap);
-   /* if (G_UNLIKELY ((GST_LEVEL_DEBUG) <= GST_LEVEL_MAX && (GST_LEVEL_DEBUG) <= _gst_debug_min)) {
-    *    gst_debug_log_valist (GST_CAT_USRSCTP, GST_LEVEL_DEBUG, "", "", 0, NULL,
-    *          format, ap);
-    * } */
    va_end(ap);
 
    out[strcspn(out, "\n")] = '\0';
-   GST_CAT_TRACE(GST_CAT_USRSCTP,"%s", out);
+   /* out[strcspn(out, "\r")] = '\0'; */
+   GST_CAT_TRACE(GST_CAT_USRSCTP_SND,"%s", out);
+   g_free(out);
+}
+
+void usrsctp_debug_printf_receiver(const char *format, ...) {
+   va_list ap;
+   gchar *out;
+
+   va_start(ap, format);
+   out = gst_info_strdup_vprintf(format, ap);
+   va_end(ap);
+
+   out[strcspn(out, "\n")] = '\0';
+   /* out[strcspn(out, "\r")] = '\0'; */
+   GST_CAT_TRACE(GST_CAT_USRSCTP_RCV,"%s", out);
    g_free(out);
 }
 

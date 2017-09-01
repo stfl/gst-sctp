@@ -63,7 +63,7 @@ void gst_RtpSctpSender_stop (_GstRtpSctpSender *RtpSctpSender);
 
 static gboolean gst_RtpSctpSender_handle_message (GstBus *bus,
       GstMessage *message, gpointer data);
-static gboolean stats_timer (gpointer priv);
+/* static gboolean stats_timer (gpointer priv); */
 
 
 enum PipelineVariant {
@@ -81,6 +81,7 @@ gchar *num_buffers = GST_FRAME_COUNT_DEFAULT;
 gchar *timestamp_offset = NULL;
 gchar *deadline = NULL;
 gchar *path_delay = NULL;
+gchar *delay_padding = NULL;
 
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
@@ -91,6 +92,7 @@ static GOptionEntry entries[] = {
       "timestamp offset to use for systemtime RTP timestamp", NULL},
    {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline, "", NULL},
    {"path-delay", 'P', 0, G_OPTION_ARG_STRING, &path_delay, "", NULL},
+   {"delay-padding", 'p', 0, G_OPTION_ARG_STRING, &delay_padding, "", NULL},
    {NULL}
 };
 
@@ -174,10 +176,10 @@ gst_RtpSctpSender_free (_GstRtpSctpSender * RtpSctpSender)
       gst_object_unref (RtpSctpSender->sctpsink);
       RtpSctpSender->sctpsink = NULL;
    }
-   if (RtpSctpSender->queue) {
-      gst_object_unref (RtpSctpSender->queue);
-      RtpSctpSender->queue = NULL;
-   }
+   /* if (RtpSctpSender->queue) { */
+   /*    gst_object_unref (RtpSctpSender->queue); */
+   /*    RtpSctpSender->queue = NULL; */
+   /* } */
 
    if (RtpSctpSender->pipeline) {
       gst_element_set_state (RtpSctpSender->pipeline, GST_STATE_NULL);
@@ -219,79 +221,42 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    gst_util_set_object_arg(G_OBJECT(rtppay), "seqnum-offset",  "0");
    gst_util_set_object_arg(G_OBJECT(rtppay), "timestamp-offset", timestamp_offset);
 
-   /* struct timeval now; */
-   /* gettimeofday(&now, NULL); */
-   /* GValue val = G_VALUE_INIT; */
-   /* g_value_init (&val, G_TYPE_UINT); */
-   /* g_value_set_uint (&val, (unsigned int)now.tv_sec); */
-   /* g_object_set_property (G_OBJECT (rtppay), "timestamp-offset", "1503580849"); */
-   /* GST_DEBUG_OBJECT(pipeline, "timestamp_offset: ", .data); */
-
-   /* if ((4294 - (now.tv_sec - 1503580849)) < 500) { */
-   /*    GST_ERROR_OBJECT(pipeline, "The TS offset might get tight!!! only %us left\t use: %u", */
-   /*          (unsigned int) (4294 - (now.tv_sec - 1503580849)), (unsigned int)now.tv_sec); */
-   /*    return; */
-   /* } */
-
-
-   /* GString ts_off_string; // = g_string_new(); */
-   /* g_string_printf(&ts_off_string, "%u", (uint32_t) now.tv_sec); */
-   /* g_string_free(&ts_off_string, TRUE); */
-
-   /* GstClockTime now = gst_clock_get_time(gst_system_clock_obtain());
-    * GString time_string;
-    * g_string_printf(&time_string, "%lu", now);
-    * gst_util_set_object_arg(G_OBJECT(rtppay), "timestamp-offset",  time_string.str);
-    * GST_ERROR_OBJECT(pipeline, "%lu > %s", now, time_string.str); */
-   /* g_string_free(&time_string, TRUE); */
- 
- 
-   GstElement *queue = gst_element_factory_make("queue2", "queue");
+   /* GstElement *queue = gst_element_factory_make("queue2", "queue"); */
 
    GstElement *sink = gst_element_factory_make("sctpsink", "sink");
-   /* g_object_set(sink, */
-         /* "host",   "11.1.1.1", */
-         /* "port",    1117, */
-         /* NULL); */
 
-   gst_util_set_object_arg(G_OBJECT(sink), "timestamp-offset", timestamp_offset);
    gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
 
-   /* FIXME not yet implemented >> set statically in the plugin */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "unorderd",  "true"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "nr-sack",  "true"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "pr-policy",  "ttl"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "pr-value",  "80"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "delayed-sack-time",  "30"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "delayed-sack-frequency",  "2"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "heartbeat-interval",  "5000"); */
+   gst_util_set_object_arg(G_OBJECT(sink), "timestamp-offset", timestamp_offset);
+   gst_util_set_object_arg(G_OBJECT(sink), "delay", path_delay);
+   gst_util_set_object_arg(G_OBJECT(sink), "delay-padding", delay_padding);
+   gst_util_set_object_arg(G_OBJECT(sink), "deadline", deadline);
 
-   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-primary",  "1234"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-primary",  "2345"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-src-port-secondary",  "4321"); */
-   /* gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps-dest-port-secondary",  "5432"); */
-
-   if (variant == PIPELINE_CMT
-         || variant == PIPELINE_CMT_DPR
-      ){
+   if (variant == PIPELINE_CMT || variant == PIPELINE_CMT_DPR){
       gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
       gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
    } 
 
+   GString *deadline_pr_value = g_string_new("");
+   g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
+
    if (variant == PIPELINE_CMT_DUPL) {
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0");
+      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
+      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0"); */
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
    } else if (variant == PIPELINE_CMT_DPR) {
       gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "100");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
       /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
       /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "1"); */
    } else {
       gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "80");
+      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
       // FIXME make pr_value a variable here
       // make it an attribute of sctpsink
    }
+   g_string_free(deadline_pr_value, TRUE);
 
    if (variant == PIPELINE_CMT_DPR) {
       gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dpr");
@@ -301,8 +266,9 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "off");
    }
 
+
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, timeoverlay, rtppay, queue, sink, NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, timeoverlay, rtppay, sink, NULL);
 
    /* link */
    if (!gst_element_link_filtered(source, timeoverlay, src_caps)) {
@@ -316,14 +282,14 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       g_warning ("Failed to link timeoverlay, rrtppay!\n");
    }
 
-   if (!gst_element_link(rtppay, queue)) {
+   if (!gst_element_link(rtppay, sink)) {
       g_critical ("Failed to link rtppay, queue'\n");
    }
 
 
-   if (!gst_element_link(queue, sink)) {
-      g_critical ("Failed to link queue, sink'\n");
-   }
+   /* if (!gst_element_link(queue, sink)) { */
+   /*    g_critical ("Failed to link queue, sink'\n"); */
+   /* } */
 
    RtpSctpSender->pipeline = pipeline;
 
@@ -336,7 +302,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    RtpSctpSender->sink_element = gst_bin_get_by_name (GST_BIN (pipeline), "sink");
 
    RtpSctpSender->sctpsink = sink;
-   RtpSctpSender->queue = queue;
+   /* RtpSctpSender->queue = queue; */
 }
 
 void
@@ -404,7 +370,7 @@ static void
 gst_RtpSctpSender_handle_paused_to_playing (_GstRtpSctpSender *
       RtpSctpSender)
 {
-   RtpSctpSender->timer_id = g_timeout_add (1000, stats_timer, RtpSctpSender);
+   /* RtpSctpSender->timer_id = g_timeout_add (1000, stats_timer, RtpSctpSender); */
    GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(RtpSctpSender->pipeline),
          GST_DEBUG_GRAPH_SHOW_ALL,
          "sender");
@@ -564,44 +530,44 @@ gst_RtpSctpSender_handle_message (GstBus * bus, GstMessage * message,
 
 
 
-static gboolean stats_timer (gpointer priv)
-{
-   _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
-   /* GstElement *sctpsink = gst_bin_get_by_name (GST_BIN (RtpSctpSender->pipeline), "sink"); */
-
-   // queue Stats (before the sink)
-   guint lvl_buf, lvl_byte;
-   guint64 lvl_time;
-   gint64 avg_in;
-   g_object_get(G_OBJECT(RtpSctpSender->queue),
-         "current-level-buffers", &lvl_buf,
-         "current-level-bytes", &lvl_byte,
-         "current-level-time", &lvl_time,
-         "avg-in-rate", &avg_in,
-         NULL);
-   GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: #%3u, %3ukB, %luns, avg: %ld kbit/s",
-         lvl_buf, (lvl_byte >> 10), lvl_time, (avg_in >> 7));
-
-
-   // usrsctp stats
-   struct sctpstat *stats = NULL;
-   g_object_get(G_OBJECT(RtpSctpSender->sctpsink), "usrsctp-stats", &stats, NULL);
-   GST_INFO_OBJECT(RtpSctpSender->pipeline, "usrsctp STATS: rdata %4u, sdata %6u, rtxdata %3u, "
-         "frtx %3u, hb %2u, todata %2u drpchklmt %u, drprwnd %u, ecncwnd %u, randry %u",
-         stats->sctps_recvdata,            /* total input DATA chunks    */
-         stats->sctps_senddata,            /* total output DATA chunks   */
-         stats->sctps_sendretransdata,     /* total output retransmitted DATA chunks */
-         stats->sctps_sendfastretrans,     /* total output fast retransmitted DATA chunks */
-         stats->sctps_sendheartbeat,       /* total output HB chunks     */
-         stats->sctps_timodata,            /* Number of T3 data time outs */
-         stats->sctps_datadropchklmt,      /* Number of in data drops due to chunk limit reached */
-         stats->sctps_datadroprwnd,        /* Number of in data drops due to rwnd limit reached */
-         stats->sctps_ecnereducedcwnd,     /* Number of times a ECN reduced the cwnd */
-         stats->sctps_primary_randry      /* Number of times the sender ran dry of user data on primary */
-         );
-
-   return TRUE;
-}
+/* static gboolean stats_timer (gpointer priv)
+ * {
+ *    _GstRtpSctpSender *RtpSctpSender = (_GstRtpSctpSender *)priv;
+ *    [> GstElement *sctpsink = gst_bin_get_by_name (GST_BIN (RtpSctpSender->pipeline), "sink"); <]
+ *
+ *    // queue Stats (before the sink)
+ *    guint lvl_buf, lvl_byte;
+ *    guint64 lvl_time;
+ *    gint64 avg_in;
+ *    g_object_get(G_OBJECT(RtpSctpSender->queue),
+ *          "current-level-buffers", &lvl_buf,
+ *          "current-level-bytes", &lvl_byte,
+ *          "current-level-time", &lvl_time,
+ *          "avg-in-rate", &avg_in,
+ *          NULL);
+ *    GST_INFO_OBJECT(RtpSctpSender->pipeline, "queue STATS: #%3u, %3ukB, %luns, avg: %ld kbit/s",
+ *          lvl_buf, (lvl_byte >> 10), lvl_time, (avg_in >> 7));
+ *
+ *
+ *    // usrsctp stats
+ *    struct sctpstat *stats = NULL;
+ *    g_object_get(G_OBJECT(RtpSctpSender->sctpsink), "usrsctp-stats", &stats, NULL);
+ *    GST_INFO_OBJECT(RtpSctpSender->pipeline, "usrsctp STATS: rdata %4u, sdata %6u, rtxdata %3u, "
+ *          "frtx %3u, hb %2u, todata %2u drpchklmt %u, drprwnd %u, ecncwnd %u, randry %u",
+ *          stats->sctps_recvdata,            [> total input DATA chunks    <]
+ *          stats->sctps_senddata,            [> total output DATA chunks   <]
+ *          stats->sctps_sendretransdata,     [> total output retransmitted DATA chunks <]
+ *          stats->sctps_sendfastretrans,     [> total output fast retransmitted DATA chunks <]
+ *          stats->sctps_sendheartbeat,       [> total output HB chunks     <]
+ *          stats->sctps_timodata,            [> Number of T3 data time outs <]
+ *          stats->sctps_datadropchklmt,      [> Number of in data drops due to chunk limit reached <]
+ *          stats->sctps_datadroprwnd,        [> Number of in data drops due to rwnd limit reached <]
+ *          stats->sctps_ecnereducedcwnd,     [> Number of times a ECN reduced the cwnd <]
+ *          stats->sctps_primary_randry      [> Number of times the sender ran dry of user data on primary <]
+ *          );
+ *
+ *    return TRUE;
+ * } */
 
 
 

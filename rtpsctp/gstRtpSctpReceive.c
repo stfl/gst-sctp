@@ -64,7 +64,7 @@ void gst_RtpSctpReceiver_stop (GstRtpSctpReceiver *RtpSctpReceiver);
 
 static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus, GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
-static gboolean stats_timer (gpointer priv);
+/* static gboolean stats_timer (gpointer priv); */
 
 enum PipelineVariant {
    PIPELINE_UDP,           // 0
@@ -320,7 +320,7 @@ static void
 gst_RtpSctpReceiver_handle_paused_to_playing (GstRtpSctpReceiver *
       RtpSctpReceiver)
 {
-   RtpSctpReceiver->stats_timer_id = g_timeout_add (1000, stats_timer, RtpSctpReceiver);
+   /* RtpSctpReceiver->stats_timer_id = g_timeout_add (1000, stats_timer, RtpSctpReceiver); */
    GST_DEBUG_BIN_TO_DOT_FILE(GST_BIN(RtpSctpReceiver->pipeline),
          GST_DEBUG_GRAPH_SHOW_ALL,
          "receiver");
@@ -348,7 +348,7 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
 {
    GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
    guint64 num_pushed, num_lost, num_late, num_old_dropped, num_duplicate, num_deadline_missed,
-           num_deadline_hit;
+           num_deadline_hit, avg_delay_hit, avg_delay_pushed;
    gdouble avg_jitter;
    GstStructure *jbuf_stats;
 
@@ -362,6 +362,8 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
             "num-old-dropped", G_TYPE_UINT64, &num_old_dropped,
             "num-deadline-missed", G_TYPE_UINT64, &num_deadline_missed,
             "num-deadline-hit", G_TYPE_UINT64, &num_deadline_hit,
+            "avg-delay-hit", G_TYPE_UINT64, &avg_delay_hit,
+            "avg-delay-pushed", G_TYPE_UINT64, &avg_delay_pushed,
             "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
             NULL)) {
       g_error("error getting the jitterbuffer stats");
@@ -375,6 +377,8 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Old Dropped:\t%ld\n", num_old_dropped);
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Missed:\t%ld", num_deadline_missed);
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Hit:\t%ld", num_deadline_hit);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Average TTD (hit):\t%.2fms", (gdouble)avg_delay_hit / 1000000);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Average TTD (pushed):\t%.2fms", (gdouble)avg_delay_pushed / 1000000);
 
 
    g_main_loop_quit (RtpSctpReceiver->main_loop);
@@ -522,49 +526,49 @@ onesecond_timer (gpointer priv)
    return TRUE;
 }
 
-static gboolean
-stats_timer (gpointer priv)
-{
-   GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
-   GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
-
-   // Jitter Bufer Stats
-   guint64 num_pushed, num_lost, num_late, num_duplicate=0;
-   gdouble avg_jitter;
-   GstStructure *jbuf_stats;
-   g_object_get(G_OBJECT(jbuf), "stats", &jbuf_stats, NULL);
-   if ( ! gst_structure_get (jbuf_stats,
-            "num-pushed",     G_TYPE_UINT64, &num_pushed,
-            "num-lost",       G_TYPE_UINT64, &num_lost,
-            "num-late",       G_TYPE_UINT64, &num_late,
-            "num-duplicates", G_TYPE_UINT64, &num_duplicate,
-            "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
-            NULL)) {
-      g_error("error getting the jitterbuffer stats");
-   }
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "jbuffer STATS: ~jitter: %f #pushed: %8lu, "
-         "#lost: %3lu, #late: %4lu, #dupl: %3lu",
-         avg_jitter, num_pushed, num_lost, num_late, num_duplicate);
-
-   // FIXME somehow free(stats);
-
-
-   // usrsctp Stats
-   struct sctpstat *usrsctp_stats = NULL;
-   g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "usrsctp-stats", &usrsctp_stats, NULL);
-
-   guint64 pushed;
-   g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "pushed", &pushed, NULL);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "usrsctp rdata %u, src pushed %lu, %0.2f, "
-         "usrsctp drp %u",
-         usrsctp_stats->sctps_recvdata,
-         pushed,
-         (gdouble)pushed/(usrsctp_stats->sctps_recvdata),
-         usrsctp_stats->sctps_pdrpmbda
-         );
-
-   return TRUE;
-}
+/* static gboolean
+ * stats_timer (gpointer priv)
+ * {
+ *    GstRtpSctpReceiver *RtpSctpReceiver = (GstRtpSctpReceiver *)priv;
+ *    GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
+ *
+ *    // Jitter Bufer Stats
+ *    guint64 num_pushed, num_lost, num_late, num_duplicate=0;
+ *    gdouble avg_jitter;
+ *    GstStructure *jbuf_stats;
+ *    g_object_get(G_OBJECT(jbuf), "stats", &jbuf_stats, NULL);
+ *    if ( ! gst_structure_get (jbuf_stats,
+ *             "num-pushed",     G_TYPE_UINT64, &num_pushed,
+ *             "num-lost",       G_TYPE_UINT64, &num_lost,
+ *             "num-late",       G_TYPE_UINT64, &num_late,
+ *             "num-duplicates", G_TYPE_UINT64, &num_duplicate,
+ *             "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
+ *             NULL)) {
+ *       g_error("error getting the jitterbuffer stats");
+ *    }
+ *    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "jbuffer STATS: ~jitter: %f #pushed: %8lu, "
+ *          "#lost: %3lu, #late: %4lu, #dupl: %3lu",
+ *          avg_jitter, num_pushed, num_lost, num_late, num_duplicate);
+ *
+ *    // FIXME somehow free(stats);
+ *
+ *
+ *    // usrsctp Stats
+ *    struct sctpstat *usrsctp_stats = NULL;
+ *    g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "usrsctp-stats", &usrsctp_stats, NULL);
+ *
+ *    guint64 pushed;
+ *    g_object_get(G_OBJECT(RtpSctpReceiver->sctpsrc), "pushed", &pushed, NULL);
+ *    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "usrsctp rdata %u, src pushed %lu, %0.2f, "
+ *          "usrsctp drp %u",
+ *          usrsctp_stats->sctps_recvdata,
+ *          pushed,
+ *          (gdouble)pushed/(usrsctp_stats->sctps_recvdata),
+ *          usrsctp_stats->sctps_pdrpmbda
+ *          );
+ *
+ *    return TRUE;
+ * } */
 
 /* helper functions */
 
