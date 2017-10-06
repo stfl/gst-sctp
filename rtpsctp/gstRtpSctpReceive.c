@@ -79,6 +79,8 @@ gchar *variant_string = "single"; // set a default
 enum PipelineVariant variant;
 gchar *timestamp_offset = NULL;
 gchar *deadline = NULL;
+gchar *path_delay = NULL;
+gchar *delay_padding = NULL;
 
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
@@ -86,8 +88,9 @@ static GOptionEntry entries[] = {
       "define the Variant for the experiment to use", " udp|single|cmt|dupl|dbr " },
    {"timestamp-offset", 'T', 0, G_OPTION_ARG_STRING, &timestamp_offset,
       "timestamp offset to use for systemtime RTP timestamp", NULL},
-   {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline,
-      "", NULL},
+   {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline, "", NULL},
+   {"path-delay", 'P', 0, G_OPTION_ARG_STRING, &path_delay, "", NULL},
+   {"delay-padding", 'p', 0, G_OPTION_ARG_STRING, &delay_padding, "", NULL},
    {NULL}
 
 };
@@ -122,7 +125,7 @@ main (int argc, char *argv[])
       variant = PIPELINE_CMT;
    } else if (0 == strncmp(variant_string, "dupl", 10)){
       variant = PIPELINE_CMT_DUPL;
-   } else if (0 == strncmp(variant_string, "dbr", 10)){
+   } else if (0 == strncmp(variant_string, "dpr", 10)){
       variant = PIPELINE_CMT_DPR;
    } else {
       g_error("unknown variant: %s\n", variant_string);
@@ -219,11 +222,24 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    GstElement *jitterbuffer = gst_element_factory_make("rtpjitterbuffer", "jitterbuffer");
    gst_util_set_object_arg(G_OBJECT(jitterbuffer), "systime-offset", timestamp_offset);
    gst_util_set_object_arg(G_OBJECT(jitterbuffer), "deadline", deadline);
-   /* g_object_set(G_OBJECT(jitterbuffer),
-    *       "latency",            100,
-    *       "max-dropout-time",   100,
-    *       "max-misorder-time",  100,  // ms
-    *       NULL); */
+   g_object_set(G_OBJECT(jitterbuffer),
+         "rfc7273-sync", FALSE,
+         "drop-on-latency", TRUE,
+         /* "max-dropout-time",   30, */
+         /* "max-misorder-time",  ,  // ms */
+         NULL);
+
+   gst_util_set_object_arg(G_OBJECT(jitterbuffer), "mode",  "slave");
+
+   if (variant == PIPELINE_CMT ||
+       variant == PIPELINE_CMT_DPR ||
+       variant == PIPELINE_CMT_DUPL) {
+   GString *jbuf_latency = g_string_new("");
+   g_string_printf(jbuf_latency, "%u",
+         (uint32_t) ((atoi(deadline) - atoi(path_delay) - atoi(delay_padding)) / 1000));
+      gst_util_set_object_arg(G_OBJECT(jitterbuffer), "latency",  jbuf_latency->str);
+   g_string_free(jbuf_latency, TRUE);
+   }
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
    GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
@@ -347,8 +363,21 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
       RtpSctpReceiver)
 {
    GstElement *jbuf = RtpSctpReceiver->jitterbuffer;
-   guint64 num_pushed, num_lost, num_late, num_old_dropped, num_duplicate, num_deadline_missed,
-           num_deadline_hit, avg_delay_hit, avg_delay_pushed;
+   guint64 num_pushed,
+           num_lost,
+           num_late,
+           num_old_dropped,
+           num_duplicate,
+           num_all_duplicate,
+           num_deadline_missed_in,
+           num_deadline_missed_out,
+           num_deadline_hit_in,
+           num_deadline_hit_out,
+           avg_delay_hit_in,
+           avg_delay_hit_out,
+           avg_delay_received,
+           avg_delay_pushed;
+
    gdouble avg_jitter;
    GstStructure *jbuf_stats;
 
@@ -359,11 +388,16 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
             "num-lost",       G_TYPE_UINT64, &num_lost,
             "num-late",       G_TYPE_UINT64, &num_late,
             "num-duplicates", G_TYPE_UINT64, &num_duplicate,
+            "num-all-duplicates", G_TYPE_UINT64, &num_all_duplicate,
             "num-old-dropped", G_TYPE_UINT64, &num_old_dropped,
-            "num-deadline-missed", G_TYPE_UINT64, &num_deadline_missed,
-            "num-deadline-hit", G_TYPE_UINT64, &num_deadline_hit,
-            "avg-delay-hit", G_TYPE_UINT64, &avg_delay_hit,
+            "num-deadline-missed-in", G_TYPE_UINT64, &num_deadline_missed_in,
+            "num-deadline-missed-out", G_TYPE_UINT64, &num_deadline_missed_out,
+            "num-deadline-hit-in", G_TYPE_UINT64, &num_deadline_hit_in,
+            "num-deadline-hit-out", G_TYPE_UINT64, &num_deadline_hit_out,
+            "avg-delay-hit-in", G_TYPE_UINT64, &avg_delay_hit_in,
+            "avg-delay-hit-out", G_TYPE_UINT64, &avg_delay_hit_out,
             "avg-delay-pushed", G_TYPE_UINT64, &avg_delay_pushed,
+            "avg-delay-received", G_TYPE_UINT64, &avg_delay_received,
             "avg-jitter",     G_TYPE_UINT64, &avg_jitter,
             NULL)) {
       g_error("error getting the jitterbuffer stats");
@@ -375,10 +409,17 @@ gst_RtpSctpReceiver_handle_ready_to_null (GstRtpSctpReceiver *
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Late:\t\t%ld", num_late);
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Duplicate:\t\t%ld", num_duplicate);
    GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Old Dropped:\t%ld\n", num_old_dropped);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Missed:\t%ld", num_deadline_missed);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num Deadline Hit:\t%ld", num_deadline_hit);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Average TTD (hit):\t%.2fms", (gdouble)avg_delay_hit / 1000000);
-   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Average TTD (pushed):\t%.2fms", (gdouble)avg_delay_pushed / 1000000);
+
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "Num All Duplicate:\t\t%ld", num_all_duplicate);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "IN: Num Deadline Missed:\t%ld", num_deadline_missed_in);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "IN: Num Deadline Hit:\t%ld", num_deadline_hit_in);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "IN: Average TTD (hit):\t%.2fms", (gdouble)avg_delay_hit_in / 1000000);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "IN: Average TTD:\t%.2fms\n", (gdouble)avg_delay_received / 1000000);
+
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "OUT: Num Deadline Missed:\t%ld", num_deadline_missed_out);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "OUT: Num Deadline Hit:\t%ld", num_deadline_hit_out);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "OUT: Average TTD (hit):\t%.2fms", (gdouble)avg_delay_hit_out / 1000000);
+   GST_INFO_OBJECT(RtpSctpReceiver->pipeline, "OUT: Average TTD (pushed):\t%.2fms", (gdouble)avg_delay_pushed / 1000000);
 
 
    g_main_loop_quit (RtpSctpReceiver->main_loop);

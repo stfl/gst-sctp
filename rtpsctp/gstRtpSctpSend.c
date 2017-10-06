@@ -235,7 +235,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    if (variant == PIPELINE_CMT || variant == PIPELINE_CMT_DPR){
       gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
       gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
-   } 
+   }
 
    GString *deadline_pr_value = g_string_new("");
    g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
