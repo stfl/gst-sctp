@@ -71,7 +71,7 @@ while (( $count < $runs )) ; do
 
    (
       echo -e "\033[0;31m------- Receiver starting\033[0m"
-      $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding
+      PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding
       echo -e "\033[0;32m------- Receiver finished\033[0m"
    ) &
 
@@ -82,7 +82,7 @@ while (( $count < $runs )) ; do
    # fi
    (
       echo -e "\033[0;31m------- Sender starting\033[0m"
-      ssh root@${ip_sender} "$RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
+      ssh root@${ip_sender} "PROJECT_DIR=${project_dir} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
       echo -e "\033[0;32m------- Sender finished\033[0m"
    ) &
 
