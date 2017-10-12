@@ -15,7 +15,7 @@ The implementation uses: [libusrsctp](https://github.com/sctplab/usrsctp)
 
 # Build // Install
 
-build **libusrsctp** with cmake/ninja
+## build **libusrsctp** with cmake/ninja
 
 ```bash
 mkdir usrsctp/build
@@ -27,12 +27,24 @@ ninja
 # sudo ninja install
 ```
 
-build **examples** with *meson.build*/*ninja*
+## build the plugin with *meson+ninja*
+### plain version:
 
 ```bash
 mkdir build
-meson build
+meson build --prefix $(pwd)/build --buildtype=release --strip -D SCTP_DEBUG=false
 cd build
+ninja
+
+sudo ninja install
+```
+
+### debug version:
+
+```bash
+mkdir build_debug
+meson build_debug --prefix $(pwd)/build_debug --buildtype=debugoptimized -D SCTP_DEBUG=true
+cd build_debug
 ninja
 
 sudo ninja install
