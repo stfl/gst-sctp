@@ -1,14 +1,18 @@
 #!/usr/bin/env zsh
 
-PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
+if (( ${+PROJECT_DIR} )); then
+   local project_dir=${PROJECT_DIR}
+else
+   local project_dir=$(pwd)
+fi
 
-# export GST_PLUGIN_PATH="/usr/lib/gstreamer-1.0:${PROJECT_DIR}/build"
-# export GST_PLUGIN_PATH="${PROJECT_DIR}/../gst-plugins-good/install/lib/gstreamer-1.0:${PROJECT_DIR}/build"
-LD_LIBRARY_PATH=${PROJECT_DIR}/usrsctp/build
+# export GST_PLUGIN_PATH="/usr/lib/gstreamer-1.0:${project_dir}/build"
+# export GST_PLUGIN_PATH="${project_dir}/../gst-plugins-good/install/lib/gstreamer-1.0:${project_dir}/build"
+LD_LIBRARY_PATH=${project_dir}/usrsctp/build
 IP_NTP_SERVER=192.168.153.130
 
 
-dot_dir_default=${PROJECT_DIR}/dot
+dot_dir_default=${project_dir}/dot
 gst_debug_default=""
 default_variant="single"
 
@@ -41,7 +45,7 @@ if (( ! ${+norun[1]} )); then
       echo "found $try_bin"
       BIN=$try_bin
    else
-      BIN="${PROJECT_DIR}/**/${try_bin}(*[1])"
+      BIN="${project_dir}/**/${try_bin}(*[1])"
       # if [[ ! -f ${~BIN} ]]; then
       #    echo "binary ( ${~BIN} ) not found"
       #    usage
@@ -54,7 +58,7 @@ export GST_PLUGIN_PATH=${TARGET}
 # # fetch
 # if (( ${+fetch[1]} )); then
 #    echo -e "\n####Fetching from git repo...."
-#    (cd ${PROJECT_DIR}
+#    (cd ${project_dir}
 #    git pull origin master
 #    )
 # fi
@@ -62,13 +66,13 @@ export GST_PLUGIN_PATH=${TARGET}
 # # build usrsctp
 # if (( ${+usrsctp[1]} )); then
 #    echo -e "\n####Building usrsctp...."
-#    cmake --build ${PROJECT_DIR}/usrsctp/build
+#    cmake --build ${project_dir}/usrsctp/build
 # fi
 
 # # build gst-sctp
 # if (( ${+build[1]} )); then
 #    echo -e "\n####Building gst-sctp...."
-#    (cd ${PROJECT_DIR}/build;
+#    (cd ${project_dir}/build;
 #    ninja install
 #    )
 # fi

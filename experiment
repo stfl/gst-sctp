@@ -9,6 +9,7 @@ RUN=${project_dir}/run
 SENDER=rtpsctp/rtpsctpsend
 RECEIVER=rtpsctp/rtpsctprecv
 TMP_DIR=/tmp
+TMP_RES_DIR=${TMP_DIR}/gst-sctp-results
 
 TARGET=${project_dir}/build
 TARGET_DEBUG=${project_dir}/build_debug
@@ -55,8 +56,8 @@ local drop=${DROP:-5}
 local padding=${PADDING:-60}
 local runs=${num_runs[2]:-1}
 
-rm -rf ${TMP_DIR}/results
-mkdir -p ${TMP_DIR}/results
+rm -rf $TMP_RES_DIR
+mkdir -p $TMP_RES_DIR
 
 count=0
 while (( $count < $runs )) ; do
@@ -88,12 +89,14 @@ while (( $count < $runs )) ; do
    wait
    (( count++ ))
    echo "\033[0;32mrun $count finished\033[0m"
-   mv ${TMP_DIR}/results/experiment_trace_in.csv ${TMP_DIR}/results/experiment_trace_in_${count}.csv
-   mv ${TMP_DIR}/results/experiment_trace_out.csv ${TMP_DIR}/results/experiment_trace_out_${count}.csv
+   mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
+   mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
 done
 
-echo "\033[0;32mall runs finished writing to results\033[0m"
-mv ${TMP_DIR}/results ${project_dir}/results/${variant}_$(date +%F_%R)
+echo "\033[0;32mall runs finished >> writing to results\033[0m"
+mkdir ${project_dir}/results
+mv ${TMP_RES_DIR} ${project_dir}/results/${variant}_$(date +%F_%R)
+
 cat > ${project_dir}/results/${variant}_$(date +%F_%R)/run_config <<EOL
 project_dir=$project_dir
 ip_sender=$ip_sender
