@@ -68,8 +68,8 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 //#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "192.168.0.1"
 #define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.0.0.2"
 #define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.0.0.1"
-#define  SCTP_DEFAULT_DEST_PORT            2222
-#define  SCTP_DEFAULT_SRC_PORT             1111
+#define  SCTP_DEFAULT_DEST_PORT            22222
+#define  SCTP_DEFAULT_SRC_PORT             11111
 
 #define SCTP_DEFAULT_ASSOC_VALUE           47
 
