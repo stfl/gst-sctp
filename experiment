@@ -1,28 +1,33 @@
 #!/usr/bin/env zsh
 
-PROJECT_DIR=/home/slendl/Projects/gst/gst-sctp
-RUN=${PROJECT_DIR}/run
+if (( ${+PROJECT_DIR} )); then
+   local project_dir=${PROJECT_DIR}
+else
+   local project_dir=$(pwd)
+fi
+RUN=${project_dir}/run
 SENDER=rtpsctp/rtpsctpsend
 RECEIVER=rtpsctp/rtpsctprecv
+TMP_DIR=/tmp
 
-TARGET=${PROJECT_DIR}/build
-TARGET_DEBUG=${PROJECT_DIR}/build_debug
+TARGET=${project_dir}/build
+TARGET_DEBUG=${project_dir}/build_debug
 
 DEBUG_SENDER="sctpsink:4,rtpsctpsend:4"
 DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4"
 
-IP_SENDER=192.168.153.132
-IP_RECEIVER=192.168.153.134
-PHY1=ens37
-PHY2=ens38
+local ip_sender=${IP_SENDER:-192.168.153.132}
+local ip_receiver=${IP_RECEIVER:-192.168.153.134}
+local phy1=${PHY1:-ens37}
+local phy2=${PHY2:-ens38}
 
 TRAPINT() {
-  print "Caught SIGINT, aborting."
-  kill ${${(v)jobstates##*:*:}%=*}
-  sudo killall rtpsctprecv
-  ssh root@${IP_SENDER} 'killall rtpsctpsend'
-  wait
-  return -1
+   print "Caught SIGINT, aborting."
+   kill ${${(v)jobstates##*:*:}%=*}
+   sudo killall rtpsctprecv
+   ssh root@${ip_sender} 'killall rtpsctpsend'
+   wait
+   return -1
 }
 
 TRAPEXIT() {
@@ -50,11 +55,14 @@ local drop=${DROP:-5}
 local padding=${PADDING:-60}
 local runs=${num_runs[2]:-1}
 
+rm -rf ${TMP_DIR}/results
+mkdir -p ${TMP_DIR}/results
+
 count=0
 while (( $count < $runs )) ; do
    echo "\033[0;31msetting delay to: ${delay}\033[0m"
-   ssh root@${IP_SENDER} "tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms"
-   ssh root@${IP_SENDER} "tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms"
+   ssh root@${ip_sender} "tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms"
+   ssh root@${ip_sender} "tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms"
    sudo tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms
    sudo tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms
 
@@ -73,14 +81,34 @@ while (( $count < $runs )) ; do
    # fi
    (
       echo -e "\033[0;31m------- Sender starting\033[0m"
-      ssh root@${IP_SENDER} "$RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
+      ssh root@${ip_sender} "$RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
       echo -e "\033[0;32m------- Sender finished\033[0m"
    ) &
 
    wait
    (( count++ ))
    echo "\033[0;32mrun $count finished\033[0m"
+   mv ${TMP_DIR}/results/experiment_trace_in.csv ${TMP_DIR}/results/experiment_trace_in_${count}.csv
+   mv ${TMP_DIR}/results/experiment_trace_out.csv ${TMP_DIR}/results/experiment_trace_out_${count}.csv
 done
+
+echo "\033[0;32mall runs finished writing to results\033[0m"
+mv ${TMP_DIR}/results ${project_dir}/results/${variant}_$(date +%F_%R)
+cat > ${project_dir}/results/${variant}_$(date +%F_%R)/run_config <<EOL
+project_dir=$project_dir
+ip_sender=$ip_sender
+ip_receiver=$ip_receiver
+phy1=$phy1
+phy2=$phy2
+
+variant=$variant
+delay_on_link=$delay
+deadline=$deadline
+num_packets=$num
+drop_rate=$drop
+padding=$padding
+runs=$runs
+EOL
 
 exit
 
