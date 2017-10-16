@@ -64,12 +64,12 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsink_debug_category
 
 // paths definition
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "12.0.0.1"
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "128.131.89.238"
 //#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "192.168.0.1"
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "12.0.0.2"
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "128.131.89.244"
 //#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "192.168.0.2"
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "128.131.89.238"
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "128.131.89.244"
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "12.0.0.1"
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "12.0.0.2"
 #define  SCTP_DEFAULT_DEST_PORT       11111
 #define  SCTP_DEFAULT_SRC_PORT        22222
 
