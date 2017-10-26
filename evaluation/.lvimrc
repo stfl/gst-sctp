@@ -1,0 +1,34 @@
+
+" compiler pyunit
+
+augroup my_dispatch
+   autocmd!
+   autocmd BufReadPost *.py let b:dispatch = 'python % --results ../results/2017-10-20_00:50/ --results ../results/2017-10-23_14:12/'
+augroup END
+
+" if exists(":CompilerSet") != 2
+"    command -nargs=* CompilerSet setlocal <args>
+" endif
+
+" CompilerSet errorformat=
+"          \%A\ \ File\ \"%f\"\\\,\ line\ %l\\\,%m,
+"          \%C\ \ \ \ %.%#,
+"          \%+Z%.%#Error\:\ %.%#,
+"          \%A\ \ File\ \"%f\"\\\,\ line\ %l,
+"          \%+C\ \ %.%#,
+"          \%-C%p^,
+"          \%Z%m,
+"          " \%-G%.%#
+
+
+" CompilerSet makeprg=python
+
+" au Filetype python set errorformat=
+"          \%A\ \ File\ \"%f\"\\\,\ line\ %l\\\,%m,
+"          \%C\ \ \ \ %.%#,
+"          \%+Z%.%#Error\:\ %.%#,
+"          \%A\ \ File\ \"%f\"\\\,\ line\ %l,
+"          \%+C\ \ %.%#,
+"          \%-C%p^,
+"          \%Z%m,
+"          \%-G%.%#
