@@ -26,6 +26,8 @@ TRAPINT() {
    wait
 
    [[ ! ${+verbose[1]} ]] && set +x
+   rmdir .receiver_running.lok
+   rmdir .receiver_start.lok
    exit
 }
 
@@ -73,13 +75,13 @@ if (( ${+VARIANT} )); then
    local -a testing_variants=(${=VARIANT})
 else
    # typeset -a testing_variants
-   local -a testing_variants=(single cmt dupl dpr)
+   local -a testing_variants=(udp single cmt dupl dpr)
 fi
 if (( ${+DELAY} )); then
    local -a testing_delay=(${=DELAY})
 else
    # typeset -a testing_delay
-   local -a testing_delay=(2 5 10 15 20 25 30 40 50 60 70 100)
+   local -a testing_delay=(5 20 40 60 80 100)
 fi
 if (( ${+DROP} )); then
    local -a testing_drop=(${=DROP})
@@ -150,7 +152,11 @@ for variant in ${testing_variants}; do
             fi
 
             [[ $variant == "udp" ]] && rmdir .receiver_start.lok
+            [[ $variant != "udp" ]] && mkdir .receiver_running.lok
+
             ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding | tee ${TMP_RES_DIR}/out_receiver_${count}
+
+            [[ $variant != "udp" ]] && rmdir .receiver_running.lok
 
             if (( ! ${+nowrite[1]} )); then
                cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_post_${count}
@@ -162,11 +168,6 @@ for variant in ${testing_variants}; do
             echo -e "\033[0;32m------- Receiver finished\033[0m"
             ) &
 
-            # if [[ $count == 0 ]] && (( !${+debug[1]} )); then
-            #    ntp="--ntp"
-            # else
-            #    ntp=
-            # fi
             (
 
             if (( ! ${+nowrite[1]} )); then
@@ -182,6 +183,17 @@ for variant in ${testing_variants}; do
 
             ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime" | tee ${TMP_RES_DIR}/out_sender_${count}
 
+            local c=0
+            while [[ $variant != "udp" ]] && [ -d .receiver_running.lok ]; do
+               sleep 1
+               (( c++ ))
+               if (( $c >= 30 )); then
+                  ${=receiver_root} killall rtpsctprecv
+                  touch ${TMP_RES_DIR}/receiver_killed_${count}
+                  break
+               fi
+            done
+
             if (( ! ${+nowrite[1]} )); then
                scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_post_${count}
                scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_post_${count}
@@ -192,7 +204,7 @@ for variant in ${testing_variants}; do
             ) &
 
             wait
-            echo "\033[0;32mrun $count finished\033[0m"
+            echo "\033[0;32mrun $count finished ${run_id}\033[0m"
             if (( ! ${+nowrite[1]} )); then
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
@@ -228,5 +240,7 @@ EOL
 done # variant
 
 [[ ! ${+verbose[1]} ]] && set +x
+rmdir .receiver_running.lok
+rmdir .receiver_start.lok
 exit
 
