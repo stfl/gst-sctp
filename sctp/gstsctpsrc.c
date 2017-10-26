@@ -51,6 +51,10 @@
 #include <usrsctp.h>
 #include <netinet/sctp_constants.h>
 
+#include <glib.h>
+#include <glib/gprintf.h>
+#include <glib/gstdio.h>
+
 #define BUFFER_SIZE 10240
 
 GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
@@ -62,12 +66,12 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 
 /*  PORTS defined for the RECEIVER */
 
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "128.131.89.244"
-//#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "192.168.0.2"
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "128.131.89.238"
-//#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "192.168.0.1"
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "12.0.0.2"
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "12.0.0.1"
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "192.168.0.2"
+//#define  SCTP_DEFAULT_DEST_IP_PRIMARY      "12.0.0.2"
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "192.168.0.1"
+//#define  SCTP_DEFAULT_SRC_IP_PRIMARY       "12.0.0.1"
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY    "128.131.89.244"
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY     "128.131.89.238"
 #define  SCTP_DEFAULT_DEST_PORT            22222
 #define  SCTP_DEFAULT_SRC_PORT             11111
 
@@ -451,6 +455,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
       usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
    usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
    /* usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      [> Enable I-Flag <] */
+   usrsctp_sysctl_set_sctp_shutdown_guard_time_default(10);
 
    /* if ((sctpsrc->sock = usrsctp_socket(AF_INET6, SOCK_SEQPACKET, IPPROTO_SCTP, */
    /* sctpsrc_receive_cb, NULL, 0, NULL)) == NULL) { */
@@ -650,8 +655,21 @@ static gboolean gst_sctpsrc_stop(GstBaseSrc *src)
    GST_INFO_OBJECT(sctpsrc, "nagle allowed sending\t\t\t%u",               stat.sctps_naglesent);
    GST_INFO_OBJECT(sctpsrc, "nagle doesn't allow sending\t\t%u",           stat.sctps_naglequeued);
 
-   usrsctp_close(sctpsrc->sock);
+   FILE *usrsctp_stats_receiver = g_fopen ("/tmp/gst-sctp-results/usrsctp_stats_receiver", "w+");
+   if (usrsctp_stats_receiver == NULL) {
+      GST_ERROR_OBJECT (sctpsrc, "could not open file for writing: %s", strerror (errno));
+   }
 
+   g_fprintf (usrsctp_stats_receiver, "sent_packets=%u\n",        stat.sctps_outpackets);
+   g_fprintf (usrsctp_stats_receiver, "recv_packets=%u\n",        stat.sctps_inpackets);
+   g_fprintf (usrsctp_stats_receiver, "recv_data=%u\n",             stat.sctps_recvdata);
+   g_fprintf (usrsctp_stats_receiver, "recv_dupdata=%u\n",      stat.sctps_recvdupdata);
+   g_fprintf (usrsctp_stats_receiver, "send_sacks=%u\n",          stat.sctps_sendsacks);
+   g_fprintf (usrsctp_stats_receiver, "recv_sacks=%u\n",          stat.sctps_recvsacks);
+
+   fclose(usrsctp_stats_receiver);
+
+   usrsctp_close(sctpsrc->sock);
 
    if (! sctpsrc->socket_open)
       return TRUE;

@@ -56,6 +56,10 @@
 #include <netinet/sctp_constants.h>
 /* #include <netinet/sctp.h> */
 
+#include <glib.h>
+#include <glib/gprintf.h>
+#include <glib/gstdio.h>
+
 #include <netdb.h>
 
 int done = 0;
@@ -64,12 +68,12 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define GST_CAT_DEFAULT gst_sctpsink_debug_category
 
 // paths definition
-#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "128.131.89.238"
-//#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "192.168.0.1"
-#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "128.131.89.244"
-//#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "192.168.0.2"
-#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "12.0.0.1"
-#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "12.0.0.2"
+#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "192.168.0.1"
+//#define  SCTP_DEFAULT_DEST_IP_PRIMARY         "12.0.0.1"
+#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "192.168.0.2"
+//#define  SCTP_DEFAULT_SRC_IP_PRIMARY          "12.0.0.2"
+#define  SCTP_DEFAULT_DEST_IP_SECONDARY       "128.131.89.238"
+#define  SCTP_DEFAULT_SRC_IP_SECONDARY        "128.131.89.244"
 #define  SCTP_DEFAULT_DEST_PORT       11111
 #define  SCTP_DEFAULT_SRC_PORT        22222
 
@@ -97,7 +101,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2|SCTP_DEBUG_OUTPUT2) */
 /* #define SCTP_USRSCTP_DEBUG                  (SCTP_DEBUG_TIMER3|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT2|SCTP_DEBUG_OUTPUT3|SCTP_DEBUG_OUTPUT4) //|SCTP_DEBUG_INDATA1|SCTP_DEBUG_INPUT1) //|SCTP_DEBUG_OUTPUT4) */
-// #define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_TIMER3
+/* #define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_TIMER3 */
 #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
 
 #define SCTP_PPID       99
@@ -658,6 +662,8 @@ gst_sctpsink_start (GstBaseSink * sink)
    if (sctpsink->bs)
       usrsctp_sysctl_set_sctp_buffer_splitting(1);
 
+   usrsctp_sysctl_set_sctp_shutdown_guard_time_default(10);
+
    if ((sctpsink->sock = usrsctp_socket(AF_INET6, SOCK_STREAM, IPPROTO_SCTP,
                usrsctp_receive_cb, NULL, 0, NULL)) == NULL) {
       GST_ERROR_OBJECT(sctpsink, "usrsctp_socket");
@@ -829,7 +835,7 @@ gst_sctpsink_start (GstBaseSink * sink)
             "a", 1, NULL, 0,
             &spa, (socklen_t)sizeof(struct sctp_sendv_spa),
             SCTP_SENDV_SPA, 0) < 0);
-   
+
    if (usrsctp_set_non_blocking(sctpsink->sock, 0))
       GST_ERROR_OBJECT(sctpsink, "usrsctp_set_non_blocking: %s", strerror(errno));
 
@@ -909,6 +915,26 @@ gst_sctpsink_stop (GstBaseSink * sink)
    GST_INFO_OBJECT(sctpsink, "DPR Timer avg handle after deadline\t%.1fms",           (gdouble)stat.sctps_dpr_avg_delay_timer / 1000);
    GST_INFO_OBJECT(sctpsink, "DPR Chunks flagged for retran\t\t%u",                   stat.sctps_dpr_flagged);
    /* GST_INFO_OBJECT(sctpsink, "DPR Chunks retran before DL\t%u",             stat.sctps_dpr_pre_deadline); */
+
+   FILE *usrsctp_stats_sender = g_fopen ("/tmp/gst-sctp-results/usrsctp_stats_sender", "w+");
+   if (usrsctp_stats_sender == NULL) {
+      GST_ERROR_OBJECT (sctpsink, "could not open file for writing: %s", strerror (errno));
+   }
+
+   g_fprintf (usrsctp_stats_sender, "sent_packets=%u\n",        stat.sctps_outpackets);
+   g_fprintf (usrsctp_stats_sender, "recv_packets=%u\n",        stat.sctps_inpackets);
+   g_fprintf (usrsctp_stats_sender, "send_data=%u\n",           stat.sctps_senddata);
+   g_fprintf (usrsctp_stats_sender, "send_retrans_data=%u\n",    stat.sctps_sendretransdata);
+   g_fprintf (usrsctp_stats_sender, "send_fast_retrans=%u\n",   stat.sctps_sendfastretrans);
+   g_fprintf (usrsctp_stats_sender, "send_sacks=%u\n",          stat.sctps_sendsacks);
+   g_fprintf (usrsctp_stats_sender, "recv_sacks=%u\n",          stat.sctps_recvsacks);
+   g_fprintf (usrsctp_stats_sender, "timer_dpr_fired=%u\n",     stat.sctps_timodpr);
+   g_fprintf (usrsctp_stats_sender, "dpr_avg_delay_timer=%u\n", stat.sctps_dpr_avg_delay_timer);
+   g_fprintf (usrsctp_stats_sender, "dpr_flagged=%u\n",         stat.sctps_dpr_flagged);
+   g_fprintf (usrsctp_stats_sender, "abandoned_sent=%lu\n",     prstat.sprstat_abandoned_sent);
+   g_fprintf (usrsctp_stats_sender, "abandoned_unsent=%lu\n",   prstat.sprstat_abandoned_unsent);
+
+   fclose(usrsctp_stats_sender);
 
    // free all memory
    while (usrsctp_finish() != 0) {
@@ -1133,7 +1159,7 @@ struct buffer_list_pass {
 static GstFlowReturn gst_sctpsink_render_list (GstBaseSink *sink, GstBufferList *buffer_list) {
    /* GstSctpSink *sctpsink = ; */
 
-   struct buffer_list_pass pass_to_list = { 
+   struct buffer_list_pass pass_to_list = {
       .sink = GST_SCTPSINK (sink),
       .list = buffer_list
    };

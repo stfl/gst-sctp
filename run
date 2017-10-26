@@ -9,7 +9,7 @@ fi
 # export GST_PLUGIN_PATH="/usr/lib/gstreamer-1.0:${project_dir}/build"
 # export GST_PLUGIN_PATH="${project_dir}/../gst-plugins-good/install/lib/gstreamer-1.0:${project_dir}/build"
 LD_LIBRARY_PATH=${project_dir}/usrsctp/build
-IP_NTP_SERVER=192.168.153.130
+IP_NTP_SERVER=${IP_RECEIVER}
 
 
 dot_dir_default=${project_dir}/dot
@@ -79,7 +79,11 @@ export GST_PLUGIN_PATH=${TARGET}
 
 if (( ${+ntp[1]} )); then
    sudo systemctl stop ntpd.service
-   sudo ntpdate $IP_NTP_SERVER
+   sudo ntpdate ${IP_NTP_SERVER}
+   if (( $? )); then
+      echo "\033[0;31mNTP failed\033[0m"
+      exit 1
+   fi
    sudo systemctl start ntpd.service
 fi
 

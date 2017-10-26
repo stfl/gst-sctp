@@ -17,26 +17,23 @@ TARGET_DEBUG=${project_dir}/build_debug
 DEBUG_SENDER="sctpsink:4,rtpsctpsend:4"
 DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4"
 
-local ip_sender=${IP_SENDER:-192.168.153.132}
-local ip_receiver=${IP_RECEIVER:-192.168.153.134}
-local phy1=${PHY1:-ens37}
-local phy2=${PHY2:-ens38}
 
 TRAPINT() {
    print "Caught SIGINT, aborting."
    kill ${${(v)jobstates##*:*:}%=*}
-   sudo killall rtpsctprecv
+   ${=receiver_root} killall rtpsctprecv
    ssh root@${ip_sender} 'killall rtpsctpsend'
    wait
-   return -1
-}
 
-TRAPEXIT() {
    [[ ! ${+verbose[1]} ]] && set +x
-   return -1
+   exit
 }
 
-zparseopts -D -E -- R=norun v=verbose n:=num_runs d=debug -ntp=ntp
+# TRAPEXIT() {
+   # return -1
+# }
+
+zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite
 
 if (( ${+verbose[1]} )); then
    set -x
@@ -48,70 +45,181 @@ if (( ${+debug[1]} )); then
    TARGET=$TARGET_DEBUG
 fi
 
-local variant=${VARIANT:-dpr}
-local delay=${DELAY:-30}
+if (( ${+remote[1]} )); then
+   receiver_root="ssh root@${ip_receiver}"
+   receiver_run="ssh ibk@${ip_receiver}"
+else
+   receiver_root=sudo
+   receiver_run=""
+fi
+
+local ip_sender=${IP_SENDER:-192.168.153.132}
+local ip_receiver=${IP_RECEIVER:-192.168.153.135}
+ip a | grep -q ${ip_receiver}
+if (( $? )); then
+   echo "wrong receiver ip"
+   exit
+fi
+
+local phy1=${PHY1:-ens37}
+local phy2=${PHY2:-ens38}
+
 local deadline=${DEADLINE:-450}
-local num=${NUM:-100}
-local drop=${DROP:-5}
+local num=${NUM:-2000}
 local padding=${PADDING:-60}
 local runs=${num_runs[2]:-1}
 
-rm -rf $TMP_RES_DIR
-mkdir -p $TMP_RES_DIR
+if (( ${+VARIANT} )); then
+   local -a testing_variants=(${=VARIANT})
+else
+   # typeset -a testing_variants
+   local -a testing_variants=(single cmt dupl dpr)
+fi
+if (( ${+DELAY} )); then
+   local -a testing_delay=(${=DELAY})
+else
+   # typeset -a testing_delay
+   local -a testing_delay=(2 5 10 15 20 25 30 40 50 60 70 100)
+fi
+if (( ${+DROP} )); then
+   local -a testing_drop=(${=DROP})
+else
+   # typeset -a testing_drop
+   local -a testing_drop=(0 1 2 3 4 5 6 7 8 9 10 12 15 20)
+fi
 
-count=0
-while (( $count < $runs )) ; do
-   echo "\033[0;31msetting delay to: ${delay}\033[0m"
-   ssh root@${ip_sender} "tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms"
-   ssh root@${ip_sender} "tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms"
-   sudo tc qdisc replace dev $PHY1 root netem loss ${drop}% 25% delay ${delay}ms
-   sudo tc qdisc replace dev $PHY2 root netem loss ${drop}% 25% delay ${delay}ms
-
-   local systime=$(date +%s)
-
-   (
-      echo -e "\033[0;31m------- Receiver starting\033[0m"
-      PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding
-      echo -e "\033[0;32m------- Receiver finished\033[0m"
-   ) &
-
-   # if [[ $count == 0 ]] && (( !${+debug[1]} )); then
-   #    ntp="--ntp"
-   # else
-   #    ntp=
-   # fi
-   (
-      echo -e "\033[0;31m------- Sender starting\033[0m"
-      ssh root@${ip_sender} "PROJECT_DIR=${project_dir} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime ${ntp[1]:+--ntp}"
-      echo -e "\033[0;32m------- Sender finished\033[0m"
-   ) &
-
-   wait
-   (( count++ ))
-   echo "\033[0;32mrun $count finished\033[0m"
-   mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
-   mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
-done
-
-echo "\033[0;32mall runs finished >> writing to results\033[0m"
-mkdir ${project_dir}/results
-mv ${TMP_RES_DIR} ${project_dir}/results/${variant}_$(date +%F_%R)
-
-cat > ${project_dir}/results/${variant}_$(date +%F_%R)/run_config <<EOL
-project_dir=$project_dir
-ip_sender=$ip_sender
-ip_receiver=$ip_receiver
-phy1=$phy1
-phy2=$phy2
-
-variant=$variant
-delay_on_link=$delay
-deadline=$deadline
-num_packets=$num
-drop_rate=$drop
-padding=$padding
-runs=$runs
+run_date=$(date +%F_%R)
+if (( ! ${+nowrite[1]} )); then
+   ${=receiver_run} mkdir -p ${project_dir}/results/${run_date}
+   ${=receiver_run} cat > ${project_dir}/results/${run_date}/experiments_config <<EOL
+project_dir=${project_dir}
+ip_sender=${ip_sender}
+ip_receiver=${ip_receiver}
+phy1=${phy1}
+phy2=${phy2}
+variant=${testing_variants}
+delay_on_link=${testing_delay}
+deadline=${deadline}
+num_frames=${num}
+drop_rate=${testing_drop}
+padding=${padding}
+runs=${runs}
 EOL
+fi
 
+for variant in ${testing_variants}; do
+   for delay in ${testing_delay}; do
+      for drop in ${testing_drop}; do
+         run_id=${variant}_${delay}ms_${drop}d_${deadline}D_${num}n
+
+         ${=receiver_run} rm -rf $TMP_RES_DIR
+         ${=receiver_run} mkdir -p $TMP_RES_DIR
+         ssh root@${ip_sender} "rm -rf ${TMP_RES_DIR} && mkdir -p ${TMP_RES_DIR}"
+
+         echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
+         ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss ${drop}% 25% delay ${delay}ms"
+         ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms"
+         ${=receiver_root} tc qdisc replace dev $phy1 root netem loss ${drop}% 25% delay ${delay}ms
+         ${=receiver_root} tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms
+
+         if (( ${+ntp[1]} )); then
+            ssh root@${ip_sender} sudo systemctl stop ntpd.service
+            ssh root@${ip_sender} sudo ntpdate ${ip_receiver}
+            if (( $? )); then
+               echo "\033[0;31mNTP failed\033[0m"
+            fi
+            ssh root@${ip_sender} sudo systemctl start ntpd.service
+         fi
+
+         count=1
+         while (( $count <= $runs )) ; do
+            local systime=$(date +%s)
+            echo "\033[0;31starting with delay= ${delay} drop_rate= ${drop}\033[0m"
+
+            (
+            echo -e "\033[0;31m------- Receiver starting\033[0m"
+
+            if (( ! ${+nowrite[1]} )); then
+               cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_pre_${count}
+               cp /sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy1}_rx_bytes_pre_${count}
+               cp /sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy2}_tx_bytes_pre_${count}
+               cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_pre_${count}
+            fi
+
+            ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding | tee ${TMP_RES_DIR}/out_receiver_${count}
+
+            if (( ! ${+nowrite[1]} )); then
+               cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_post_${count}
+               cp /sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy1}_rx_bytes_post_${count}
+               cp /sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy2}_tx_bytes_post_${count}
+               cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_post_${count}
+            fi
+
+            echo -e "\033[0;32m------- Receiver finished\033[0m"
+            ) &
+
+            # if [[ $count == 0 ]] && (( !${+debug[1]} )); then
+            #    ntp="--ntp"
+            # else
+            #    ntp=
+            # fi
+            (
+            echo -e "\033[0;31m------- Sender starting\033[0m"
+
+            if (( ! ${+nowrite[1]} )); then
+               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_pre_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_pre_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy2}_tx_bytes_pre_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy2}_rx_bytes_pre_${count}
+            fi
+
+            ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime" | tee ${TMP_RES_DIR}/out_sender_${count}
+
+            if (( ! ${+nowrite[1]} )); then
+               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_post_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_post_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy2}_tx_bytes_post_${count}
+               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy2}_rx_bytes_post_${count}
+            fi
+            echo -e "\033[0;32m------- Sender finished\033[0m"
+            ) &
+
+            wait
+            echo "\033[0;32mrun $count finished\033[0m"
+            if (( ! ${+nowrite[1]} )); then
+               ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
+               ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
+               ${=receiver_run} mv ${TMP_RES_DIR}/usrsctp_stats_receiver ${TMP_RES_DIR}/usrsctp_stats_receiver_${count}
+               scp -q root@${ip_sender}:${TMP_RES_DIR}/usrsctp_stats_sender ${TMP_RES_DIR}/usrsctp_stats_sender_${count}
+            fi
+            (( count++ ))
+         done
+
+         if (( ! ${+nowrite[1]} )); then
+            echo "\033[0;32mall runs finished ID: ${run_id} >> writing results to ${project_dir}/results/${run_date}/${run_id}\033[0m"
+            ${=receiver_run} mkdir -p ${project_dir}/results/${run_date}/${run_id}
+            ${=receiver_run} mv ${TMP_RES_DIR}/* ${project_dir}/results/${run_date}/${run_id}
+            ${=receiver_run} cat > ${project_dir}/results/${run_date}/${run_id}/run_config <<EOL
+project_dir=${project_dir}
+ip_sender=${ip_sender}
+ip_receiver=${ip_receiver}
+phy1=${phy1}
+phy2=${phy2}
+variant=${variant}
+delay_on_link=${delay}
+deadline=${deadline}
+num_frames=${num}
+drop_rate=${drop}
+padding=${padding}
+runs=${runs}
+EOL
+         fi
+         sleep 1
+
+      done # drop
+   done # delay
+done # variant
+
+[[ ! ${+verbose[1]} ]] && set +x
 exit
 
