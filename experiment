@@ -40,8 +40,8 @@ if (( ${+verbose[1]} )); then
 fi
 
 if (( ${+debug[1]} )); then
-     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8"
+     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:2"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:3"
    TARGET=$TARGET_DEBUG
 fi
 
@@ -136,6 +136,9 @@ for variant in ${testing_variants}; do
             local systime=$(date +%s)
             echo "\033[0;31starting with delay= ${delay} drop_rate= ${drop}\033[0m"
 
+            # sync so the receiver realy starts first (only for UDP)
+            [[ $variant == "udp" ]] && mkdir .receiver_start.lok
+
             (
             echo -e "\033[0;31m------- Receiver starting\033[0m"
 
@@ -146,6 +149,7 @@ for variant in ${testing_variants}; do
                cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_pre_${count}
             fi
 
+            [[ $variant == "udp" ]] && rmdir .receiver_start.lok
             ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding | tee ${TMP_RES_DIR}/out_receiver_${count}
 
             if (( ! ${+nowrite[1]} )); then
@@ -164,7 +168,6 @@ for variant in ${testing_variants}; do
             #    ntp=
             # fi
             (
-            echo -e "\033[0;31m------- Sender starting\033[0m"
 
             if (( ! ${+nowrite[1]} )); then
                scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_pre_${count}
@@ -172,6 +175,10 @@ for variant in ${testing_variants}; do
                scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy2}_tx_bytes_pre_${count}
                scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy2}_rx_bytes_pre_${count}
             fi
+
+            while [[ $variant == "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
+            # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
+            echo -e "\033[0;31m------- Sender starting\033[0m"
 
             ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime" | tee ${TMP_RES_DIR}/out_sender_${count}
 

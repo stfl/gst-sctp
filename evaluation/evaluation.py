@@ -549,8 +549,9 @@ args = parser.parse_args()
 all_exp = []
 for r in args.results:
     results_dir = ResultsDir(r)
-    exp_id = 0
     for run_dir in glob.iglob(r + "/*/"):
+        print('entering:', run_dir)
+        exp_id = run_dir
         with shelve.open(path.join(run_dir, "experiments")) as shelf:
             if args.rebuild is False and str(exp_id) in shelf:
                 #  shelf[str(exp_id)] = exp
@@ -562,7 +563,7 @@ for r in args.results:
                 #  print('storing to shelf')
         all_exp.append((exp.variant, exp))
         print(exp)
-        exp_id += 1
+        #  exp_id += 1
 
 #  import pdb; pdb.set_trace()
 print("found", len(all_exp), 'experiments with altogether', sum(e[1].num_runs for e in all_exp), 'runs')

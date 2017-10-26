@@ -190,18 +190,30 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    GstElement *pipeline = gst_pipeline_new ("pipeline");
 
    /* create element */
-   GstElement *source = gst_element_factory_make("sctpsrc", "source");
-   /* g_object_set(G_OBJECT(source),
-    *       "host",   "11.1.1.1",
-    *       "port",   1117,
-    *       NULL); */
+   GstElement *source;
 
-   if (variant == PIPELINE_CMT ||
-       variant == PIPELINE_CMT_DPR ||
-       variant == PIPELINE_CMT_DUPL) {
-      gst_util_set_object_arg(G_OBJECT(source), "cmt",  "true");
-      gst_util_set_object_arg(G_OBJECT(source), "buffer-split",  "true");
+   if (variant != PIPELINE_UDP) {
+      source = gst_element_factory_make("sctpsrc", "source");
+      /* g_object_set(G_OBJECT(source),
+      *       "host",   "11.1.1.1",
+      *       "port",   1117,
+      *       NULL); */
+
+      if (variant == PIPELINE_CMT ||
+         variant == PIPELINE_CMT_DPR ||
+         variant == PIPELINE_CMT_DUPL) {
+         gst_util_set_object_arg(G_OBJECT(source), "cmt",  "true");
+         gst_util_set_object_arg(G_OBJECT(source), "buffer-split",  "true");
+      }
+   } else {
+      source = gst_element_factory_make("udpsrc", "source");
+      g_object_set(G_OBJECT(source),
+            "timeout", 5000000000,  // us
+            "port",   55555,
+            NULL);
+
    }
+
 
    GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
          "media",          G_TYPE_STRING,  "video",
@@ -533,9 +545,14 @@ gst_RtpSctpReceiver_handle_message (GstBus * bus, GstMessage * message,
       case GST_MESSAGE_STRUCTURE_CHANGE:
       case GST_MESSAGE_STREAM_STATUS:
          break;
+      case GST_MESSAGE_ELEMENT:
+            if (gst_message_has_name (message, "GstUDPSrcTimeout")) {
+               g_print ("got GstUDPSrcTimeout\n");
+               gst_RtpSctpReceiver_stop (RtpSctpReceiver);
+               break;
+            }
       case GST_MESSAGE_STEP_DONE:
       case GST_MESSAGE_APPLICATION:
-      case GST_MESSAGE_ELEMENT:
       case GST_MESSAGE_SEGMENT_START:
       case GST_MESSAGE_SEGMENT_DONE:
       case GST_MESSAGE_DURATION:

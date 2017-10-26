@@ -223,49 +223,57 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
 
    /* GstElement *queue = gst_element_factory_make("queue2", "queue"); */
 
-   GstElement *sink = gst_element_factory_make("sctpsink", "sink");
+   GstElement *sink;
+   if (variant != PIPELINE_UDP) {
+      sink = gst_element_factory_make("sctpsink", "sink");
 
-   gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
+      gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
 
-   gst_util_set_object_arg(G_OBJECT(sink), "timestamp-offset", timestamp_offset);
-   gst_util_set_object_arg(G_OBJECT(sink), "delay", path_delay);
-   gst_util_set_object_arg(G_OBJECT(sink), "delay-padding", delay_padding);
-   gst_util_set_object_arg(G_OBJECT(sink), "deadline", deadline);
+      gst_util_set_object_arg(G_OBJECT(sink), "timestamp-offset", timestamp_offset);
+      gst_util_set_object_arg(G_OBJECT(sink), "delay", path_delay);
+      gst_util_set_object_arg(G_OBJECT(sink), "delay-padding", delay_padding);
+      gst_util_set_object_arg(G_OBJECT(sink), "deadline", deadline);
 
-   if (variant == PIPELINE_CMT || variant == PIPELINE_CMT_DPR){
-      gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
-      gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
-   }
+      if (variant == PIPELINE_CMT || variant == PIPELINE_CMT_DPR){
+         gst_util_set_object_arg(G_OBJECT(sink), "cmt",  "true");
+         gst_util_set_object_arg(G_OBJECT(sink), "buffer-split",  "true");
+      }
 
-   GString *deadline_pr_value = g_string_new("");
-   g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
+      GString *deadline_pr_value = g_string_new("");
+      g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
 
-   if (variant == PIPELINE_CMT_DUPL) {
-      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
-      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0"); */
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
-   } else if (variant == PIPELINE_CMT_DPR) {
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
-      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
-      /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "1"); */
+      if (variant == PIPELINE_CMT_DUPL) {
+         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
+         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0"); */
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
+      } else if (variant == PIPELINE_CMT_DPR) {
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
+         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
+         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "1"); */
+      } else {
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
+         // FIXME make pr_value a variable here
+         // make it an attribute of sctpsink
+      }
+      g_string_free(deadline_pr_value, TRUE);
+
+      if (variant == PIPELINE_CMT_DPR) {
+         gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dpr");
+      } else if (variant == PIPELINE_CMT_DUPL) {
+         gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dupl");
+      } else {
+         gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "off");
+      }
    } else {
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-      gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
-      // FIXME make pr_value a variable here
-      // make it an attribute of sctpsink
+      sink = gst_element_factory_make("udpsink", "sink");
+      g_object_set(sink,
+            "host",  "192.168.0.1",
+            "port",  55555,
+            NULL);
    }
-   g_string_free(deadline_pr_value, TRUE);
-
-   if (variant == PIPELINE_CMT_DPR) {
-      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dpr");
-   } else if (variant == PIPELINE_CMT_DUPL) {
-      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "dupl");
-   } else {
-      gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "off");
-   }
-
 
    /* add to pipeline */
    gst_bin_add_many(GST_BIN(pipeline), source, timeoverlay, rtppay, sink, NULL);
