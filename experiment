@@ -36,7 +36,7 @@ TRAPINT() {
    # return -1
 # }
 
-zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture
+zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture -commit=commit
 
 if (( ${+verbose[1]} )); then
    set -x
@@ -184,7 +184,6 @@ for variant in ${testing_variants}; do
             receiver_pid=$!
 
             (
-
             if (( ! ${+nowrite[1]} )); then
                scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_pre_${count}
                scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_pre_${count}
@@ -204,6 +203,7 @@ for variant in ${testing_variants}; do
                (( c++ ))
                if (( $c >= 30 )); then
                   ${=receiver_root} killall rtpsctprecv
+                  echo -e "\033[0;31mreceiver killed\033[0m"
                   touch ${TMP_RES_DIR}/receiver_killed_${count}
                   break
                fi
@@ -220,7 +220,7 @@ for variant in ${testing_variants}; do
             sender_pid=$!
 
             wait $sender_pid $receiver_pid
-            
+
             if (( ${+capture[1]} )); then
                kill -INT ${tshark_pid}
             fi
@@ -235,8 +235,9 @@ for variant in ${testing_variants}; do
             (( count++ ))
          done
 
+         echo "\033[0;32mall runs finished ID: ${run_id} >> writing results to ${project_dir}/results/${run_date}/${run_id}\033[0m"
+
          if (( ! ${+nowrite[1]} )); then
-            echo "\033[0;32mall runs finished ID: ${run_id} >> writing results to ${project_dir}/results/${run_date}/${run_id}\033[0m"
             ${=receiver_run} mkdir -p ${project_dir}/results/${run_date}/${run_id}
             ${=receiver_run} mv ${TMP_RES_DIR}/* ${project_dir}/results/${run_date}/${run_id}
             ${=receiver_run} cat > ${project_dir}/results/${run_date}/${run_id}/run_config <<EOL
@@ -259,6 +260,14 @@ EOL
       done # drop
    done # delay
 done # variant
+
+if (( ${+commit[1]} )) && (( ! ${+nowrite[1]} )); then
+   mkdir lab_results
+   mv ${project_dir}/results/${run_date} lab_results/
+   git add lab_results/${run_date}
+   git commit -m "lab results: ${run_date}"
+   git push
+fi
 
 [[ ! ${+verbose[1]} ]] && set +x
 rmdir .receiver_running.lok
