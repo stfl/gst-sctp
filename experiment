@@ -136,7 +136,7 @@ for variant in ${testing_variants}; do
          count=1
          while (( $count <= $runs )) ; do
             local systime=$(date +%s)
-            echo "\033[0;31starting with delay= ${delay} drop_rate= ${drop}\033[0m"
+            echo -e "\033[0;31mstarting variant ${variant} with delay= ${delay} drop_rate= ${drop}\033[0m"
 
             # sync so the receiver realy starts first (only for UDP)
             [[ $variant == "udp" ]] && mkdir .receiver_start.lok

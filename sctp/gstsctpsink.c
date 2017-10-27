@@ -93,7 +93,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_CMT                     FALSE
 #define  SCTP_DEFAULT_DUPL_POLICY             "off"
 
-#define SCTP_SNDBUF                           67108864 // 2^26
+#define SCTP_SNDBUF                           268435456 // 2^28
 
 #define  SCTP_DEFAULT_DEADLINE_US             450000
 #define  SCTP_DEFAULT_DELAY                   0
