@@ -148,12 +148,6 @@ for variant in ${testing_variants}; do
             # sync so the receiver realy starts first (only for UDP)
             [[ $variant == "udp" ]] && mkdir .receiver_start.lok
 
-            if (( ${+capture[1]} )); then
-               [[ $variant == "udp" ]] && prot='udp' || prot='sctp'
-               tshark -i ${phy1} -i ${phy2} -f "${prot}" -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
-               tshark_pid=$!
-               sleep 5
-            fi
 
             (
             echo -e "\033[0;31m------- Receiver starting\033[0m"
@@ -166,12 +160,26 @@ for variant in ${testing_variants}; do
                cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_pre_${count}
             fi
 
+
+            if (( ${+capture[1]} )); then
+               [[ $variant == "udp" ]] && prot='udp' || prot='sctp'
+               touch ${TMP_RES_DIR}/receiver_${count}.pcap
+               chmod o+rw ${TMP_RES_DIR}/receiver_${count}.pcap
+               sudo tshark -i ${phy1} -i ${phy2} -f "${prot}" -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
+               tshark_pid=$!
+               sleep 5
+            fi
+
             [[ $variant == "udp" ]] && rmdir .receiver_start.lok
             [[ $variant != "udp" ]] && mkdir .receiver_running.lok
 
             ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding | tee ${TMP_RES_DIR}/out_receiver_${count}
 
             [[ $variant != "udp" ]] && rmdir .receiver_running.lok
+
+            if (( ${+capture[1]} )); then
+               sudo kill -INT ${tshark_pid}
+            fi
 
             if (( ! ${+nowrite[1]} )); then
                cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_post_${count}
@@ -222,9 +230,6 @@ for variant in ${testing_variants}; do
 
             wait $sender_pid $receiver_pid
 
-            if (( ${+capture[1]} )); then
-               kill -INT ${tshark_pid}
-            fi
 
             echo "\033[0;32mrun ${run_id} finished (${all_count}/${all_runs}) ETA: $(date +"%F %R" -d "+ $(( ( all_runs - all_count) * ( num / 24 + 10) )) sec") \033[0m"
             if (( ! ${+nowrite[1]} )); then
