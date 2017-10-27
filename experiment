@@ -22,6 +22,7 @@ TRAPINT() {
    print "Caught SIGINT, aborting."
    kill ${${(v)jobstates##*:*:}%=*}
    ${=receiver_root} killall rtpsctprecv
+   ${=receiver_root} killall -9 tshark
    ssh root@${ip_sender} 'killall rtpsctpsend'
    wait
 
@@ -35,7 +36,7 @@ TRAPINT() {
    # return -1
 # }
 
-zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite
+zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture
 
 if (( ${+verbose[1]} )); then
    set -x
@@ -109,6 +110,11 @@ runs=${runs}
 EOL
 fi
 
+(( all_count = ${#testing_variants} * ${#testing_delay} * ${#testing_drop} * ${runs} ))
+(( all_time = all_count * ( num / 25 + 4) ))
+date_finished=$(date +"%F %R" -d "+ ${all_time} sec")
+echo "alltogether ${all_count} runs, ${all_time}s, ETA: ${date_finished}"
+
 for variant in ${testing_variants}; do
    for delay in ${testing_delay}; do
       for drop in ${testing_drop}; do
@@ -141,8 +147,16 @@ for variant in ${testing_variants}; do
             # sync so the receiver realy starts first (only for UDP)
             [[ $variant == "udp" ]] && mkdir .receiver_start.lok
 
+            if (( ${+capture[1]} )); then
+               [[ $variant == "udp" ]] && prot='udp' || prot='sctp'
+               tshark -i ${phy1} -i ${phy2} -f "${prot}" -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
+               tshark_pid=$!
+               sleep 5
+            fi
+
             (
             echo -e "\033[0;31m------- Receiver starting\033[0m"
+
 
             if (( ! ${+nowrite[1]} )); then
                cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_pre_${count}
@@ -167,6 +181,7 @@ for variant in ${testing_variants}; do
 
             echo -e "\033[0;32m------- Receiver finished\033[0m"
             ) &
+            receiver_pid=$!
 
             (
 
@@ -202,9 +217,15 @@ for variant in ${testing_variants}; do
             fi
             echo -e "\033[0;32m------- Sender finished\033[0m"
             ) &
+            sender_pid=$!
 
-            wait
-            echo "\033[0;32mrun $count finished ${run_id}\033[0m"
+            wait $sender_pid $receiver_pid
+            
+            if (( ${+capture[1]} )); then
+               kill -INT ${tshark_pid}
+            fi
+
+            echo "\033[0;32mrun ${run_id} finished (${count}/${all_count}) ETA: $(date +"%F %R" -d "+ $(( ( all_count - count) * ( num / 25 + 4) )) sec") \033[0m"
             if (( ! ${+nowrite[1]} )); then
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
