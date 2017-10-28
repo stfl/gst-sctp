@@ -154,10 +154,10 @@ for variant in ${testing_variants}; do
 
 
             if (( ! ${+nowrite[1]} )); then
-               cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_pre_${count}
-               cp /sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy1}_rx_bytes_pre_${count}
-               cp /sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy2}_tx_bytes_pre_${count}
-               cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_pre_${count}
+               local receiver_tx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
+               local receiver_tx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
+               local receiver_rx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
+               local receiver_rx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
             fi
 
 
@@ -173,7 +173,8 @@ for variant in ${testing_variants}; do
             [[ $variant == "udp" ]] && rmdir .receiver_start.lok
             [[ $variant != "udp" ]] && mkdir .receiver_running.lok
 
-            ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding | tee ${TMP_RES_DIR}/out_receiver_${count}
+            # PIPE='| tee'
+            ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 > ${TMP_RES_DIR}/out_receiver_${count}
 
             [[ $variant != "udp" ]] && rmdir .receiver_running.lok
 
@@ -182,10 +183,16 @@ for variant in ${testing_variants}; do
             fi
 
             if (( ! ${+nowrite[1]} )); then
-               cp /sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy1}_tx_bytes_post_${count}
-               cp /sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy1}_rx_bytes_post_${count}
-               cp /sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/receiver_${phy2}_tx_bytes_post_${count}
-               cp /sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/receiver_${phy2}_rx_bytes_post_${count}
+               local receiver_tx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
+               local receiver_tx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
+               local receiver_rx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
+               local receiver_rx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
+               ${=receiver_run} cat > ${TMP_RES_DIR}/receiver_transfered_bytes_${count} <<EOL
+receiver_tx_phy1=$(( receiver_tx_phy1_post - receiver_tx_phy1_pre ))
+receiver_tx_phy2=$(( receiver_tx_phy2_post - receiver_tx_phy2_pre ))
+receiver_rx_phy1=$(( receiver_rx_phy1_post - receiver_rx_phy1_pre ))
+receiver_rx_phy2=$(( receiver_rx_phy2_post - receiver_rx_phy2_pre ))
+EOL
             fi
 
             echo -e "\033[0;32m------- Receiver finished\033[0m"
@@ -194,17 +201,17 @@ for variant in ${testing_variants}; do
 
             (
             if (( ! ${+nowrite[1]} )); then
-               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_pre_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_pre_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy2}_tx_bytes_pre_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy2}_rx_bytes_pre_${count}
+               sender_tx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
+               sender_tx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
+               sender_rx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
+               sender_rx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
             fi
 
             while [[ $variant == "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
             # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
             echo -e "\033[0;31m------- Sender starting\033[0m"
 
-            ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime" | tee ${TMP_RES_DIR}/out_sender_${count}
+            ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime 2>&1 > ${TMP_RES_DIR}/out_sender_${count}"
 
             local c=0
             while [[ $variant != "udp" ]] && [ -d .receiver_running.lok ]; do
@@ -219,10 +226,16 @@ for variant in ${testing_variants}; do
             done
 
             if (( ! ${+nowrite[1]} )); then
-               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy1}_tx_bytes_post_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy1}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy1}_rx_bytes_post_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/tx_bytes ${TMP_RES_DIR}/sender_${phy2}_tx_bytes_post_${count}
-               scp -q root@${ip_sender}:/sys/class/net/${phy2}/statistics/rx_bytes ${TMP_RES_DIR}/sender_${phy2}_rx_bytes_post_${count}
+               sender_tx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
+               sender_tx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
+               sender_rx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
+               sender_rx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
+               ${=receiver_run} cat > ${TMP_RES_DIR}/sender_transfered_bytes_${count} <<EOL
+sender_tx_phy1=$(( sender_tx_phy1_post - sender_tx_phy1_pre ))
+sender_tx_phy2=$(( sender_tx_phy2_post - sender_tx_phy2_pre ))
+sender_rx_phy1=$(( sender_rx_phy1_post - sender_rx_phy1_pre ))
+sender_rx_phy2=$(( sender_rx_phy2_post - sender_rx_phy2_pre ))
+EOL
             fi
             echo -e "\033[0;32m------- Sender finished\033[0m"
             ) &
@@ -230,13 +243,13 @@ for variant in ${testing_variants}; do
 
             wait $sender_pid $receiver_pid
 
-
             echo "\033[0;32mrun ${run_id} finished (${all_count}/${all_runs}) ETA: $(date +"%F %R" -d "+ $(( ( all_runs - all_count) * ( num / 24 + 10) )) sec") \033[0m"
             if (( ! ${+nowrite[1]} )); then
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/usrsctp_stats_receiver ${TMP_RES_DIR}/usrsctp_stats_receiver_${count}
                scp -q root@${ip_sender}:${TMP_RES_DIR}/usrsctp_stats_sender ${TMP_RES_DIR}/usrsctp_stats_sender_${count}
+               scp -q root@${ip_sender}:${TMP_RES_DIR}/out_sender_${count} ${TMP_RES_DIR}/
             fi
             (( count++ ))
             (( all_count++ ))
@@ -277,7 +290,7 @@ if (( ${+commit[1]} )) && (( ! ${+nowrite[1]} )); then
 fi
 
 [[ ! ${+verbose[1]} ]] && set +x
-rmdir .receiver_running.lok
-rmdir .receiver_start.lok
+rmdir .receiver_running.lok 2>/dev/null
+rmdir .receiver_start.lok 2>/dev/null
 exit
 
