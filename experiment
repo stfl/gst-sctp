@@ -14,8 +14,8 @@ TMP_RES_DIR=${TMP_DIR}/gst-sctp-results
 TARGET=${project_dir}/build
 TARGET_DEBUG=${project_dir}/build_debug
 
-DEBUG_SENDER="sctpsink:4,rtpsctpsend:4"
-DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4"
+DEBUG_SENDER="sctpsink:4,rtpsctpsend:4,multiudpsink:1"
+DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4,udpsrc:1"
 
 
 TRAPINT() {
