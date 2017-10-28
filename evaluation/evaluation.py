@@ -536,9 +536,9 @@ class ResultsDir():
             #  num_runs = min(2, num_runs)  # TODO force only 2
 
 
-def plot_delay_over_time(run):
-    t, ttd = exp.runs[0].delay_over_time()
-    plt.plot(t / 1000000000, ttd / 1000000, 'r.')
+#  def plot_delay_over_time(run):
+#      t, ttd = exp.runs[0].delay_over_time()
+#      plt.plot(t / 1000000000, ttd / 1000000, 'r.')
 
 
 def plot_hist(exp):
@@ -561,17 +561,17 @@ def plot_hist(exp):
 
 
 def plot_hist_over_drop(var, delay):
-    plot_hist_multi([e[1] for e in all_exp if e[0] == var and e[1].delay is delay],
+    plot_hist_multi([e for v, e in all_exp if v == var and e.delay is delay],
                     label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates')
 
 
 def plot_hist_over_delay(var, drop):
-    plot_hist_multi([e[1] for e in all_exp if e[0] == var and e[1].drop_rate is drop],
+    plot_hist_multi([e for v, e in all_exp if v == var and e.drop_rate is drop],
                     label="str(e.delay)+'ms'", title='TTD at different Link Delays')
 
 
 def plot_hist_over_var(delay, drop):
-    plot_hist_multi([e[1] for e in all_exp if e[1].drop_rate is drop and e[1].delay is delay],
+    plot_hist_multi([e for v, e in all_exp if e.drop_rate is drop and e.delay is delay],
                     label="str(e.variant)", title='TTD at different Duplication Variants')
 
 
@@ -592,12 +592,12 @@ def plot_hist_multi(exps, label, title):
                                         legend=False, mark_right=False,
                                         secondary_y=True, ax=ax, sharey=ax, sharex=ax)
 
-    plt.axvline(x=exp.deadline, linestyle='--', color='gray')
+    plt.axvline(x=exps[0].deadline, linestyle='--', color='gray')
 
     plt.title(title)
     ax.set_xlabel('TTD [ms]')
     #  ax.right_ax.set_ylabel('Cumulative')
-    plt.xlim((0, exp.deadline * 4 / 3))
+    plt.xlim((0, exps[0].deadline * 4 / 3))
 
     plt.show()
 
@@ -650,35 +650,49 @@ parser.add_argument('--lab', help='dir of lab_restults (everything in there will
 parser.add_argument('--experiment', help='the single experiment to analyze')
 parser.add_argument('--rebuild', nargs='?', default=False, type=bool,
                     help='recollect the experiment results')
+parser.add_argument('--deeprebuild', nargs='?', default=False, type=bool,
+                    help='deep recollect the experiment results')
 args = parser.parse_args()
 
-if args.lab:
-    all_dirs = glob.iglob(args.lab + "/*/")
-else:
-    all_dirs = args.results
 
-all_exp = []
-for r in all_dirs:
-    results_dir = ResultsDir(r)
-    for run_dir in glob.iglob(r + "/*/"):
-        print('entering:', run_dir)
-        exp_id = run_dir
-        # TODO change shelve.open to results_dir
-        with shelve.open(path.join(run_dir, "experiments")) as shelf:
-            if args.rebuild is False and str(exp_id) in shelf:
-                #  shelf[str(exp_id)] = exp
-                print('loading experiment from shelf')
-                exp = shelf[str(exp_id)]
-            else:
-                exp = Experiment(run_dir, results_dir)
-                shelf[str(exp_id)] = exp
-                #  print('storing to shelf')
-        if exp.num_runs > 0:
-            all_exp.append((exp.variant, exp))  # TODO change to flat list
-            print(exp)
+def load_experiements(load_dirs):
+    global all_exp
+    all_exp = []
+    for r in load_dirs:
+        results_dir = ResultsDir(r)
+        with shelve.open(path.join(r, "experiments")) as shelf:
+            for run_dir in glob.iglob(r + "/*/"):
+                print('entering:', run_dir)
+                exp_id = run_dir
+                # TODO change shelve.open to results_dir
+                if args.deeprebuild is False and str(exp_id) in shelf:
+                    #  shelf[str(exp_id)] = exp
+                    print('loading experiment from shelf')
+                    exp = shelf[str(exp_id)]
+                else:
+                    exp = Experiment(run_dir, results_dir)
+                    shelf[str(exp_id)] = exp
+
+                if exp.num_runs > 0:
+                    all_exp.append((exp.variant, exp))  # TODO change to flat list
+                    print(exp)
+                else:
+                    print('ignoring this empty experiment\n')
+                #  exp_id += 1
+
+
+if args.lab:
+    with shelve.open(path.join(args.lab, "experiments")) as shelf:
+        global all_exp
+        if args.rebuild is False and 'all' in shelf:
+            print('loading all experiments')
+            all_exp = shelf['all']
         else:
-            print('ignoring this empty experiment\n')
-        #  exp_id += 1
+            load_experiements(glob.iglob(args.lab + "/*/"))
+            shelf['all'] = all_exp
+else:
+    load_experiements(args.results)
+
 
 #  import pdb; pdb.set_trace()
 print("found", len(all_exp), 'experiments with altogether', sum(e[1].num_runs for e in all_exp), 'runs')
@@ -691,6 +705,9 @@ all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
 
 #  plot_hist_over_delay('dpr', 15)
 plot_hist_over_drop('dpr', 60)
+plot_hist_over_drop('single', 60)
+plot_hist_over_drop('udp', 60)
+plot_hist_over_drop('dupl', 60)
 #  plot_hist_over_var(60, 10)
 #  plot_ddr_over_drop(delay=40)
 #  plot_ddr_over_delay(drop_rate=8)
