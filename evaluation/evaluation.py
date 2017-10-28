@@ -1,22 +1,30 @@
 import argparse
 import numpy as np
-import pandas as pd
-import shelve
 import numpy.lib.recfunctions as rcfuncs
+import pandas as pd
+
+import shelve
+import sys
 from os import path
 import glob
 import re
 
-from exceptions import InvalidValue
-from experiment import Experiment
-from run import Run
+from IPython import embed
+from IPython.core import ultratb
+sys.excepthook = ultratb.FormattedTB(mode='Verbose',
+                                     color_scheme='Linux', call_pdb=1)
 
-from mpl_toolkits.axes_grid1 import host_subplot
-import mpl_toolkits.axisartist as aa
+from eval_exceptions import InvalidValue, ReceiverKilled
+#  from experiment import Experiment
+#  from run import Run
+
+#  from mpl_toolkits.axes_grid1 import host_subplot
+#  import mpl_toolkits.axisartist as aa
 
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.style.use('ggplot')
+
 #  from scipy.interpolate import UnivariateSpline
 #  import math
 
@@ -26,6 +34,9 @@ init_offset = 12  # frames = 0.5 s
 num_packets_per_frame = 11
 cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
+
+plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
+               'blue', 'purple', 'fuchsia']
 
 
 class Experiment:
@@ -39,9 +50,10 @@ class Experiment:
         self.num_runs = results_dir.num_runs
         self.__collect_runs()
 
-        self.trace = pd.concat([r.trace for r in self.runs])
+        if self.num_runs > 0:
+            self.trace = pd.concat([r.trace for r in self.runs])
 
-        assert len(self.trace) + self.lost == self.packets_sent
+            assert len(self.trace) + self.lost == self.packets_sent
         #  self.all_ttd_jb = np.concatenate([r.trace_out['ttd'] for r in self.runs])
         #  assert len(self.all_ttd_jb) + self.lost == self.packets_sent
 
@@ -63,8 +75,8 @@ class Experiment:
 
         for run_id in range(1, self.num_runs+1):
             try:
-                self.runs.append(Run(self.run_path, run_id, self.results_dir))
-            except InvalidValue:
+                self.runs.append(Run(self.run_path, run_id, self.results_dir, self.variant))
+            except (InvalidValue, ReceiverKilled):
                 print("Ignoring this run")
                 self.num_runs -= 1
                 continue
@@ -124,6 +136,10 @@ class Experiment:
     def ttd_var(self):
         return self.trace.ttd.var()
 
+    @property
+    def sender_tx(self):
+        return [sum(r.sender_tx[0] for r in self.runs), sum(r.sender_tx[1] for r in self.runs)]
+
     def hist(self):
         return eval_hist(self.trace.ttd/1000000, min(int(self.ttd_max / 1000000 / 5), 50))
 
@@ -133,6 +149,10 @@ class Experiment:
     @property
     def tro(self):
         return (self.duplicates_unmasked + self.packets_sent_unmasked) / float(self.packets_sent_unmasked) - 1
+
+    @property
+    def sender_buffer_blocked(self):
+        return sum(r.sender_buffer_blocked for r in self.runs)
 
     def __str__(self):
         exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop}% D:{deadline}ms {runs} runs\n"
@@ -148,24 +168,39 @@ class Experiment:
                            std=self.ttd_std/1000000,
                            max=self.ttd_max/1000000,
                            q1=q1, q2=q2))
-        return exp_str + ddr_str + ttd_str
+        other_str = ('snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n'
+                     .format(send_block=self.sender_buffer_blocked,
+                             s1=self.sender_tx[0]/1000, s2=self.sender_tx[1]/1000))
+
+        return exp_str + ddr_str + ttd_str + other_str
 
 
 class Run():
     '''A Run is a single run with a defined number of frames transfered through gstreamer'''
-    def __init__(self, run_path, run_id, results_dir):
+    def __init__(self, run_path, run_id, results_dir, variant):
         self.run_path = run_path
         self.run_id = run_id
+        self.variant = variant
         self.results_dir = results_dir
         self.duplicates_unmasked = 0
         self.packets_sent_unmasked = self.results_dir.num_frames * num_packets_per_frame
         self.packets_sent = self.packets_sent_unmasked - cutoff_init - cutoff_end
+        self.receiver_killed = path.isfile(path.join(self.run_path, 'receiver_killed_' + str(self.run_id)))
+        if self.receiver_killed:
+            print('receiver killed')
+            raise ReceiverKilled
 
         file_experiment_trace_in = path.join(self.run_path, 'experiment_trace_in_' + str(self.run_id) + '.csv')
-        assert path.isfile(file_experiment_trace_in)
+        if not path.isfile(file_experiment_trace_in):
+            print("trace not found")
+            raise InvalidValue
+
         #  file_experiment_trace_out = path.join(self.run_path, 'experiment_trace_out_' + str(self.run_id) + '.csv')
         self.trace = np.genfromtxt(file_experiment_trace_in, names=True, delimiter=';', dtype=np.int64)
         #  self.trace_jb = np.genfromtxt(self.file_experiment_trace_out, names=True, delimiter=';', dtype=int)
+        if len(self.trace) < cutoff_init:
+            print("trace too short")
+            raise InvalidValue
 
         # add a new field (column) with delays for each packet
         self.trace = rcfuncs.append_fields(self.trace, 'ttd', dtypes=np.int64,
@@ -206,8 +241,23 @@ class Run():
         self.deadline_miss = len(self.trace) - self.deadline_hit
         self.ddr = float(self.deadline_hit / self.packets_sent)
 
+        with open(path.join(self.run_path, "out_sender_" + str(self.run_id))) as out_sender_file:
+            out_sender = out_sender_file.read()
+            self.sender_buffer_blocked = len(re.findall(r"usrsctp_sendv failed:", out_sender))
+            if self.sender_buffer_blocked > self.packets_sent_unmasked * 0.2:
+                # ignore if more than 20% are sender buffer blocked
+                print('too much sender buffer blocking')
+                raise InvalidValue
+
         self.__calc_transfered_bytes()
-        self.__read_usrsctp_stats()
+        if self.variant in ('dpr', 'cmt', 'dupl'):
+            if (min(self.sender_tx[0], self.sender_tx[1]) * 5 < max(self.sender_tx[0], self.sender_tx[1])):
+                print('multihoming seams not to be used. phy1:{:.0f}kB phy2:{:.0f}kB  diff: {:.0f}kB'
+                      .format(self.sender_tx[0]/1000, self.sender_tx[1]/1000, abs(self.sender_tx[0] - self.sender_tx[1])/1000))
+                raise InvalidValue
+
+        if (self.variant != 'udp'):
+            self.__read_usrsctp_stats()
 
     def __read_usrsctp_stats(self):
         with open(path.join(self.run_path, "usrsctp_stats_receiver_" + str(self.run_id))) as usrsctp_stats_receiver_file:
@@ -270,19 +320,73 @@ class Run():
             #  abandoned_unsent=0
 
     def __calc_transfered_bytes(self):
-        pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_pre_' + str(self.run_id)))
-        post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_post_' + str(self.run_id)))
-        self.receiver_rx = [int(post.read()) - int(pre.read())]
-        pre.close()
-        post.close()
+        with open(path.join(self.run_path, "sender_transfered_bytes_" + str(self.run_id))) as sender_tr_file:
+            sender = sender_tr_file.read()
+            match = re.search(r"sender_tx_phy1=(\d+)", sender)
+            assert match is not None
+            self.sender_tx = [int(match[1])]
 
-        pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_pre_' + str(self.run_id)))
-        post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_post_' + str(self.run_id)))
-        self.receiver_rx.append(int(post.read()) - int(pre.read()))
-        pre.close()
-        post.close()
+            match = re.search(r"sender_tx_phy2=(\d+)", sender)
+            assert match is not None
+            self.sender_tx.append(int(match[1]))
 
-        # TODO for tx bytes
+            self.sender_rx = []
+            match = re.search(r"sender_rx_phy1=(\d+)", sender)
+            assert match is not None
+            self.sender_rx = [int(match[1])]
+
+            match = re.search(r"sender_rx_phy2=(\d+)", sender)
+            assert match is not None
+            self.sender_rx.append(int(match[1]))
+
+        with open(path.join(self.run_path, "receiver_transfered_bytes_" + str(self.run_id))) as receiver_tr_file:
+            receiver = receiver_tr_file.read()
+            match = re.search(r"receiver_tx_phy1=(\d+)", receiver)
+            assert match is not None
+            self.receiver_tx = [int(match[1])]
+
+            match = re.search(r"receiver_tx_phy2=(\d+)", receiver)
+            assert match is not None
+            self.receiver_tx.append(int(match[1]))
+
+            self.receiver_rx = []
+            match = re.search(r"receiver_rx_phy1=(\d+)", receiver)
+            assert match is not None
+            self.receiver_rx = [int(match[1])]
+
+            match = re.search(r"receiver_rx_phy2=(\d+)", receiver)
+            assert match is not None
+            self.receiver_rx.append(int(match[1]))
+
+        #  pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_pre_' + str(self.run_id)))
+        #  post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_post_' + str(self.run_id)))
+        #  self.receiver_rx = [int(post.read()) - int(pre.read())]
+        #  pre.close()
+        #  post.close()
+        #
+        #  pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_pre_' + str(self.run_id)))
+        #  post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_post_' + str(self.run_id)))
+        #  self.receiver_rx.append(int(post.read()) - int(pre.read()))
+        #  pre.close()
+        #  post.close()
+        #
+        #  # TODO for tx bytes
+        #
+        #  pre = open(path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_pre_' + str(self.run_id)))
+        #  post = open(path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_post_' + str(self.run_id)))
+        #  embed()
+        #  self.sender_tx = [int(re.match(r'(\d*)', post.read())[1]) - int(re.match(r'\d*', pre.read()))]
+        #  pre.close()
+        #  post.close()
+        #
+        #  pre = open(path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_pre_' + str(self.run_id)))
+        #  post = open(path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_post_' + str(self.run_id)))
+        #  self.sender_tx.append(int(post.read()) - int(pre.read()))
+        #  pre.close()
+        #  post.close()
+        #
+        #  print(self.sender_tx, self.receiver_rx)
+
         # TODO for Sender
 
     def __gen_duplicates_mask(self):
@@ -472,7 +576,8 @@ def plot_hist_over_var(delay, drop):
 
 
 def plot_hist_multi(exps, label, title):
-    colors = iter(['blue', 'red', 'green', 'orange', 'darkviolet'])
+    colors = iter(plot_colors)
+
     fig, ax = plt.subplots()
     for e in exps:
         c = next(colors)
@@ -498,7 +603,7 @@ def plot_hist_multi(exps, label, title):
 
 
 def plot_ddr_over_drop(delay):
-    colors = iter(['blue', 'red', 'green', 'orange', 'darkviolet'])
+    colors = iter(plot_colors)
 
     all_ddr_grouped = all_ddr[all_ddr.delay == delay].sort_values('drop_rate').groupby('variant', sort=False)
     fig, ax = plt.subplots()
@@ -541,17 +646,24 @@ def plot_ddr_over_delay(drop_rate):
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--results', action='append', help='dir of restults from the experiment run')
+parser.add_argument('--lab', help='dir of lab_restults (everything in there will be loaded..)')
 parser.add_argument('--experiment', help='the single experiment to analyze')
 parser.add_argument('--rebuild', nargs='?', default=False, type=bool,
                     help='recollect the experiment results')
 args = parser.parse_args()
 
+if args.lab:
+    all_dirs = glob.iglob(args.lab + "/*/")
+else:
+    all_dirs = args.results
+
 all_exp = []
-for r in args.results:
+for r in all_dirs:
     results_dir = ResultsDir(r)
     for run_dir in glob.iglob(r + "/*/"):
         print('entering:', run_dir)
         exp_id = run_dir
+        # TODO change shelve.open to results_dir
         with shelve.open(path.join(run_dir, "experiments")) as shelf:
             if args.rebuild is False and str(exp_id) in shelf:
                 #  shelf[str(exp_id)] = exp
@@ -561,8 +673,11 @@ for r in args.results:
                 exp = Experiment(run_dir, results_dir)
                 shelf[str(exp_id)] = exp
                 #  print('storing to shelf')
-        all_exp.append((exp.variant, exp))
-        print(exp)
+        if exp.num_runs > 0:
+            all_exp.append((exp.variant, exp))  # TODO change to flat list
+            print(exp)
+        else:
+            print('ignoring this empty experiment\n')
         #  exp_id += 1
 
 #  import pdb; pdb.set_trace()
@@ -575,10 +690,10 @@ all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
     #  all_ddr.plot(colums=['variant', ''])
 
 #  plot_hist_over_delay('dpr', 15)
-#  plot_hist_over_drop('dpr', 60)
+plot_hist_over_drop('dpr', 60)
 #  plot_hist_over_var(60, 10)
-plot_ddr_over_drop(delay=30)
-plot_ddr_over_delay(drop_rate=10)
+#  plot_ddr_over_drop(delay=40)
+#  plot_ddr_over_delay(drop_rate=8)
 
 
 exit()

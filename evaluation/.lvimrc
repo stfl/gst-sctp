@@ -3,7 +3,8 @@
 
 augroup my_dispatch
    autocmd!
-   autocmd BufReadPost *.py let b:dispatch = 'python % --results ../results/2017-10-20_00:50/ --results ../results/2017-10-23_14:12/'
+   autocmd BufReadPost *.py let b:dispatch = 'python % --lab ../lab_results'
+   " --results ../results/2017-10-20_00:50/ --results ../results/2017-10-23_14:12/'
 augroup END
 
 " if exists(":CompilerSet") != 2
