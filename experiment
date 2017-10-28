@@ -36,15 +36,15 @@ TRAPINT() {
    # return -1
 # }
 
-zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture -commit=commit
+zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture -commit=commit P=print
 
 if (( ${+verbose[1]} )); then
    set -x
 fi
 
 if (( ${+debug[1]} )); then
-     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:2"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:3"
+     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:5"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5"
    TARGET=$TARGET_DEBUG
 fi
 
@@ -173,8 +173,11 @@ for variant in ${testing_variants}; do
             [[ $variant == "udp" ]] && rmdir .receiver_start.lok
             [[ $variant != "udp" ]] && mkdir .receiver_running.lok
 
-            # PIPE='| tee'
-            ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 > ${TMP_RES_DIR}/out_receiver_${count}
+            if (( ${+print[1]} )); then
+               ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 | tee ${TMP_RES_DIR}/out_receiver_${count}
+            else
+               ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 > ${TMP_RES_DIR}/out_receiver_${count}
+            fi
 
             [[ $variant != "udp" ]] && rmdir .receiver_running.lok
 
@@ -211,7 +214,11 @@ EOL
             # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
             echo -e "\033[0;31m------- Sender starting\033[0m"
 
-            ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime 2>&1 > ${TMP_RES_DIR}/out_sender_${count}"
+            if (( ${+print[1]} )); then
+               ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime" 2>&1 | tee ${TMP_RES_DIR}/out_sender_${count}
+            else
+               ssh root@${ip_sender} "PROJECT_DIR=${project_dir} IP_RECEIVER=${ip_receiver} $RUN $TARGET $SENDER -d $DEBUG_SENDER -V $variant -D $deadline -n $num --delay $delay --padding $padding -T $systime 2>&1 > ${TMP_RES_DIR}/out_sender_${count}"
+            fi
 
             local c=0
             while [[ $variant != "udp" ]] && [ -d .receiver_running.lok ]; do
@@ -249,7 +256,10 @@ EOL
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/usrsctp_stats_receiver ${TMP_RES_DIR}/usrsctp_stats_receiver_${count}
                scp -q root@${ip_sender}:${TMP_RES_DIR}/usrsctp_stats_sender ${TMP_RES_DIR}/usrsctp_stats_sender_${count}
-               scp -q root@${ip_sender}:${TMP_RES_DIR}/out_sender_${count} ${TMP_RES_DIR}/
+
+               if (( ! ${+print[1]} )); then
+                  scp -q root@${ip_sender}:${TMP_RES_DIR}/out_sender_${count} ${TMP_RES_DIR}/
+               fi
             fi
             (( count++ ))
             (( all_count++ ))
