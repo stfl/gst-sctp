@@ -17,7 +17,6 @@ TARGET_DEBUG=${project_dir}/build_debug
 DEBUG_SENDER="sctpsink:4,rtpsctpsend:4,multiudpsink:1"
 DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4,udpsrc:1"
 
-
 TRAPINT() {
    print "Caught SIGINT, aborting."
    kill ${${(v)jobstates##*:*:}%=*}
@@ -44,7 +43,7 @@ fi
 
 if (( ${+debug[1]} )); then
      DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:5"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5"
    TARGET=$TARGET_DEBUG
 fi
 
@@ -126,8 +125,10 @@ for variant in ${testing_variants}; do
          ssh root@${ip_sender} "rm -rf ${TMP_RES_DIR} && mkdir -p ${TMP_RES_DIR}"
 
          echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
-         ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss ${drop}% 25% delay ${delay}ms"
-         ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms"
+         # simple gilbert p=${drop} > transission to bad stat (=100% drop)
+         # k=25% > transission to good state (0% loss)
+         ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
+         ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
          ${=receiver_root} tc qdisc replace dev $phy1 root netem loss ${drop}% 25% delay ${delay}ms
          ${=receiver_root} tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms
 

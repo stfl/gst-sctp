@@ -271,6 +271,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       sink = gst_element_factory_make("udpsink", "sink");
       g_object_set(sink,
             "host",  "192.168.0.1",
+            "bind-address",  "192.168.0.2",
             "port",  55555,
             NULL);
    }

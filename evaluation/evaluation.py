@@ -155,24 +155,46 @@ class Experiment:
         return sum(r.sender_buffer_blocked for r in self.runs)
 
     def __str__(self):
-        exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop}% D:{deadline}ms {runs} runs\n"
-                   .format(delay=self.delay, deadline=self.deadline, drop=self.drop_rate,
-                           variant=self.variant, runs=self.num_runs))
-        ddr_str = ("sent:{sent:5d} hit:{hit:5d} miss/lost:{miss:4d} DDR:{ddr:.2%} dupl:{dupl:5d} TRO:{tro:.2%}\n"
-                   .format(ddr=self.ddr, sent=self.packets_sent, hit=self.deadline_hit,
-                           miss=self.deadline_miss + self.lost, dupl=self.duplicates_unmasked,
-                           tro=self.tro))
         q1, q2 = self.ttd_quantile([.8, .95]) / 1000000
-        ttd_str = ("TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
-                   .format(mean=self.ttd_mean/1000000,
+        exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop}% D:{deadline}ms frames:{frames} {runs}runs\n"
+                   "sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
+                   "TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
+                   "dupl:{dupl:5d} TRO:{tro:.2%} snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
+                   .format(delay=self.delay,
+                           deadline=self.deadline,
+                           drop=self.drop_rate,
+                           variant=self.variant,
+                           runs=self.num_runs,
+                           frames=self.results_dir.num_frames,
+                           ddr=self.ddr,
+                           sent=self.packets_sent,
+                           hit=self.deadline_hit,
+                           miss=self.deadline_miss,
+                           lost=self.lost,
+                           ml=self.deadline_miss + self.lost,
+                           dupl=self.duplicates_unmasked,
+                           tro=self.tro,
+                           mean=self.ttd_mean/1000000,
                            std=self.ttd_std/1000000,
                            max=self.ttd_max/1000000,
-                           q1=q1, q2=q2))
-        other_str = ('snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n'
-                     .format(send_block=self.sender_buffer_blocked,
-                             s1=self.sender_tx[0]/1000, s2=self.sender_tx[1]/1000))
+                           q1=q1, q2=q2,
+                           send_block=self.sender_buffer_blocked,
+                           s1=self.sender_tx[0]/1000,
+                           s2=self.sender_tx[1]/1000))
+        #  ddr_str = ("sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
+                   #  .format(ddr=self.ddr, sent=self.packets_sent, hit=self.deadline_hit,
+                   #          miss=self.deadline_miss + self.lost, dupl=self.duplicates_unmasked,
+                   #          tro=self.tro))
+        #  ttd_str = ("TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
+                   #  .format(mean=self.ttd_mean/1000000,
+                   #          std=self.ttd_std/1000000,
+                   #          max=self.ttd_max/1000000,
+                   #          q1=q1, q2=q2))
+        #  other_str = ('dupl:{dupl:5d} TRO:{tro:.2%} snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n'
+                     #  .format(send_block=self.sender_buffer_blocked,
+                     #          s1=self.sender_tx[0]/1000, s2=self.sender_tx[1]/1000))
 
-        return exp_str + ddr_str + ttd_str + other_str
+        return exp_str #+ ddr_str + ttd_str + other_str
 
 
 class Run():
@@ -565,13 +587,13 @@ def plot_hist_over_drop(var, delay):
                     label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates')
 
 
-def plot_hist_over_delay(var, drop):
-    plot_hist_multi([e for v, e in all_exp if v == var and e.drop_rate is drop],
+def plot_hist_over_delay(var, drop_rate):
+    plot_hist_multi([e for v, e in all_exp if v == var and e.drop_rate is drop_rate],
                     label="str(e.delay)+'ms'", title='TTD at different Link Delays')
 
 
-def plot_hist_over_var(delay, drop):
-    plot_hist_multi([e for v, e in all_exp if e.drop_rate is drop and e.delay is delay],
+def plot_hist_over_var(delay, drop_rate):
+    plot_hist_multi([e for v, e in all_exp if e.drop_rate is drop_rate and e.delay is delay],
                     label="str(e.variant)", title='TTD at different Duplication Variants')
 
 
@@ -703,14 +725,15 @@ all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
 
     #  all_ddr.plot(colums=['variant', ''])
 
-#  plot_hist_over_delay('dpr', 15)
-plot_hist_over_drop('dpr', 60)
-plot_hist_over_drop('single', 60)
-plot_hist_over_drop('udp', 60)
-plot_hist_over_drop('dupl', 60)
+#  plot_hist_over_delay('udp', drop_rate=15)
+#  plot_hist_over_drop('dpr', 60)
+#  plot_hist_over_drop('single', 60)
+#  plot_hist_over_drop('udp', 60)
+#  plot_hist_over_drop('dupl', 60)
 #  plot_hist_over_var(60, 10)
 #  plot_ddr_over_drop(delay=40)
 #  plot_ddr_over_delay(drop_rate=8)
 
+embed()
 
 exit()

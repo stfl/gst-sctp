@@ -208,7 +208,7 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    } else {
       source = gst_element_factory_make("udpsrc", "source");
       g_object_set(G_OBJECT(source),
-            "timeout", 5000000000,  // us
+            "timeout", 10000000000,  // us > 10s
             "port",   55555,
             NULL);
 
@@ -237,20 +237,21 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    g_object_set(G_OBJECT(jitterbuffer),
          "rfc7273-sync", FALSE,
          "drop-on-latency", TRUE,
+         "do-retransmission", FALSE,
          /* "max-dropout-time",   30, */
          /* "max-misorder-time",  ,  // ms */
          NULL);
 
    gst_util_set_object_arg(G_OBJECT(jitterbuffer), "mode",  "slave");
 
-   if (variant == PIPELINE_CMT ||
-       variant == PIPELINE_CMT_DPR ||
-       variant == PIPELINE_CMT_DUPL) {
-   GString *jbuf_latency = g_string_new("");
-   g_string_printf(jbuf_latency, "%u",
-         (uint32_t) ((atoi(deadline) - atoi(path_delay) - atoi(delay_padding)) / 1000));
+   if (variant == PIPELINE_CMT_DPR) {
+      GString *jbuf_latency = g_string_new("");
+      g_string_printf(jbuf_latency, "%u",
+            (uint32_t) ((atoi(deadline) - atoi(path_delay) - atoi(delay_padding)) / 1000));
       gst_util_set_object_arg(G_OBJECT(jitterbuffer), "latency",  jbuf_latency->str);
-   g_string_free(jbuf_latency, TRUE);
+      g_string_free(jbuf_latency, TRUE);
+   } else {
+      gst_util_set_object_arg(G_OBJECT(jitterbuffer), "latency", "50");
    }
 
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
