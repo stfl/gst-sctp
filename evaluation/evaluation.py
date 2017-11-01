@@ -69,9 +69,9 @@ class Experiment:
             assert match is not None
             self.delay = int(match[1])
 
-            match = re.search(r"drop_rate=(\d+)", run_config)
+            match = re.search(r"drop_rate=([\d.]+)", run_config)
             assert match is not None
-            self.drop_rate = int(match[1])
+            self.drop_rate = float(match[1])
 
         for run_id in range(1, self.num_runs+1):
             try:
@@ -154,9 +154,13 @@ class Experiment:
     def sender_buffer_blocked(self):
         return sum(r.sender_buffer_blocked for r in self.runs)
 
+    @property
+    def num_frames(self):
+        return self.results_dir.num_frames
+
     def __str__(self):
         q1, q2 = self.ttd_quantile([.8, .95]) / 1000000
-        exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop}% D:{deadline}ms frames:{frames} {runs}runs\n"
+        exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop:.1f}% D:{deadline}ms frames:{frames} {runs}runs\n"
                    "sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
                    "TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
                    "dupl:{dupl:5d} TRO:{tro:.2%} snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
@@ -626,29 +630,32 @@ def plot_hist_multi(exps, label, title):
 
 def plot_ddr_over_drop(delay):
     colors = iter(plot_colors)
-
-    all_ddr_grouped = all_ddr[all_ddr.delay == delay].sort_values('drop_rate').groupby('variant', sort=False)
     fig, ax = plt.subplots()
-    for t, gr in all_ddr_grouped:
-        gr.plot(y='ddr', x='drop_rate',
+
+    all_df_grouped = all_df[all_df.delay == delay].sort_values('drop').groupby('variant', sort=False)
+    for t, gr in all_df_grouped:
+        gr.plot(y='ddr', x='drop',
                 label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
                 ax=ax, sharex=ax, sharey=ax, color=next(colors))
-    plt.title('DDR at different Duplication Variants')
+    plt.title('DDR at different Duplication Variants for Delay {}ms'.format(delay))
+    # TODO add as text
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Packet Drop Rate on the link [%]')
     plt.show()
 
 
-def plot_ddr_over_delay(drop_rate):
+def plot_ddr_over_delay(drop):
     colors = iter(['blue', 'red', 'green', 'orange', 'darkviolet'])
-
-    all_ddr_grouped = all_ddr[all_ddr.drop_rate == drop_rate].sort_values('delay').groupby('variant', sort=False)
+    # TODO sort colors
+    #  colors = iter(plot_colors)
     fig, ax = plt.subplots()
-    for t, gr in all_ddr_grouped:
+
+    all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values('delay').groupby('variant', sort=False)
+    for t, gr in all_df_grouped:
         gr.plot(y='ddr', x='delay',
                 label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
                 ax=ax, sharex=ax, sharey=ax, color=next(colors))
-    plt.title('DDR at different Duplication Variants')
+    plt.title('DDR at different Duplication Variants for Drop Rate {:.1f}%'.format(float(drop)))
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Delay on the link [%]')
     plt.show()
@@ -665,6 +672,9 @@ def plot_ddr_over_delay(drop_rate):
 #
 #      plt.show()
 
+all_df = pd.DataFrame(columns=['variant', 'drop', 'delay', 'hit', 'miss',
+                               'dupl', 'lost', 'ddr', 'runs', 'frames', 'deadline',
+                               'tro', 'ttd_mean'])
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--results', action='append', help='dir of restults from the experiment run')
@@ -679,6 +689,7 @@ args = parser.parse_args()
 
 def load_experiements(load_dirs):
     global all_exp
+    global all_df
     all_exp = []
     for r in load_dirs:
         results_dir = ResultsDir(r)
@@ -697,31 +708,47 @@ def load_experiements(load_dirs):
 
                 if exp.num_runs > 0:
                     all_exp.append((exp.variant, exp))  # TODO change to flat list
+                    all_df = all_df.append({'variant': exp.variant,
+                                            'drop': exp.drop_rate,
+                                            'delay': exp.delay,
+                                            'hit': exp.deadline_hit,
+                                            'miss':  exp.deadline_miss,
+                                            'dupl': exp.duplicates_unmasked,
+                                            'lost': exp.lost,
+                                            'ddr': exp.ddr,
+                                            'runs': exp.num_runs,
+                                            'frames': exp.num_frames,
+                                            'deadline': exp.deadline,
+                                            'tro': exp.tro,
+                                            'ttd_mean': exp.ttd_mean}, ignore_index=True)
                     print(exp)
                 else:
-                    print('ignoring this empty experiment\n')
+                    print('ignoring this empty experiment', run_dir, '\n')
                 #  exp_id += 1
 
 
 if args.lab:
     with shelve.open(path.join(args.lab, "experiments")) as shelf:
         global all_exp
-        if args.rebuild is False and 'all' in shelf:
+        if args.rebuild is False and 'all' in shelf and 'all_df' in shelf:
             print('loading all experiments')
             all_exp = shelf['all']
+            all_df = shelf['all_df']
         else:
             load_experiements(glob.iglob(args.lab + "/*/"))
             shelf['all'] = all_exp
+            shelf['all_df'] = all_df
 else:
     load_experiements(args.results)
 
 
 #  import pdb; pdb.set_trace()
-print("found", len(all_exp), 'experiments with altogether', sum(e[1].num_runs for e in all_exp), 'runs')
+print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 
-all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
-                         'delay': e.delay, 'ddr': e.ddr * 100} for v, e in all_exp],
-                       columns=['variant', 'drop_rate', 'delay', 'ddr'])
+#  all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
+#                           'delay': e.delay, 'ddr': e.ddr * 100} for v, e in all_exp],
+#                         columns=['variant', 'drop_rate', 'delay', 'ddr'])
+
 
     #  all_ddr.plot(colums=['variant', ''])
 
@@ -732,7 +759,7 @@ all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
 #  plot_hist_over_drop('dupl', 60)
 #  plot_hist_over_var(60, 10)
 #  plot_ddr_over_drop(delay=40)
-#  plot_ddr_over_delay(drop_rate=8)
+#  plot_ddr_over_delay(drop=8)
 
 embed()
 
