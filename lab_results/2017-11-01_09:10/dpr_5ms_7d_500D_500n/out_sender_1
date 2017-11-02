@@ -1,0 +1,39 @@
+found /home/ibk/gst/gst-sctp/build/rtpsctp/rtpsctpsend
+0:00:00.016018388 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:714:gst_sctpsink_start:<sink>[00m SCTP Local addresses: 128.131.89.244, 192.168.0.2
+0:00:00.016124102 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:803:gst_sctpsink_start:<sink>[00m SCTP Peer addresses: 192.168.0.1, 128.131.89.238
+0:00:20.850314022 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:863:gst_sctpsink_stop:<sink>[00m Abandoned already sent Chunks		78
+0:00:20.850333458 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:864:gst_sctpsink_stop:<sink>[00m Abandoned not yet sent Chunks		0
+0:00:20.850341356 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:875:gst_sctpsink_stop:<sink>[00m Number of packets sent:			5961
+0:00:20.850345363 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:876:gst_sctpsink_stop:<sink>[00m Number of packets received:		5366
+0:00:20.850348816 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:877:gst_sctpsink_stop:<sink>[00m total output DATA chunks			5398
+0:00:20.850352090 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:879:gst_sctpsink_stop:<sink>[00m total output retransmitted DATA chunks	547	(10.1%)
+0:00:20.850359523 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:882:gst_sctpsink_stop:<sink>[00m total output fast retran DATA chunks	544	(10.1%)
+0:00:20.850363844 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:883:gst_sctpsink_stop:<sink>[00m total FR's that happened more than once	0
+0:00:20.850367087 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:884:gst_sctpsink_stop:<sink>[00m Chunks marked for retransmission,	0
+0:00:20.850370173 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:885:gst_sctpsink_stop:<sink>[00m number of multiple FR in a RTT window	4
+0:00:20.850373260 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:886:gst_sctpsink_stop:<sink>[00m Number of early FR timers that fired	0
+0:00:20.850376453 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:888:gst_sctpsink_stop:<sink>[00m output ordered chunks			0
+0:00:20.850379524 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:889:gst_sctpsink_stop:<sink>[00m output unordered chunks			5398
+0:00:20.850382490 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:890:gst_sctpsink_stop:<sink>[00m output control chunks			19
+0:00:20.850385649 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:891:gst_sctpsink_stop:<sink>[00m out of the blue				0
+0:00:20.850388679 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:893:gst_sctpsink_stop:<sink>[00m input control chunks			5367
+0:00:20.850391630 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:894:gst_sctpsink_stop:<sink>[00m input ordered chunks			0
+0:00:20.850394596 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:895:gst_sctpsink_stop:<sink>[00m input unordered chunks			0
+0:00:20.850397618 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:897:gst_sctpsink_stop:<sink>[00m total output SACKs			0
+0:00:20.850400659 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:898:gst_sctpsink_stop:<sink>[00m total input SACKs			5357
+0:00:20.850409847 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:900:gst_sctpsink_stop:<sink>[00m ip_output error counter			0
+0:00:20.850413253 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:902:gst_sctpsink_stop:<sink>[00m Packet drop from middle box		0
+0:00:20.850416451 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:903:gst_sctpsink_stop:<sink>[00m P-drop from end host			0
+0:00:20.850419390 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:904:gst_sctpsink_stop:<sink>[00m P-drops with data			0
+0:00:20.850422351 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:905:gst_sctpsink_stop:<sink>[00m data drops due to chunk limit reached	0
+0:00:20.850425407 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:906:gst_sctpsink_stop:<sink>[00m data drops due to rwnd limit reached	0
+0:00:20.850428402 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:908:gst_sctpsink_stop:<sink>[00m sender ran dry of user data on primary	0
+0:00:20.850431420 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:910:gst_sctpsink_stop:<sink>[00m max burst doesn't allow sending		0
+0:00:20.850434540 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:911:gst_sctpsink_stop:<sink>[00m nagle allowed sending			5501
+0:00:20.850437575 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:912:gst_sctpsink_stop:<sink>[00m nagle doesn't allow sending		0
+
+0:00:20.850440616 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:914:gst_sctpsink_stop:<sink>[00m DPR Timer fired				489
+0:00:20.850443639 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:915:gst_sctpsink_stop:<sink>[00m DPR Timer avg handle after deadline	5.6ms
+0:00:20.850447129 [333m29948[00m      0x224b530 [36mINFO   [00m [00;01;31;42m            sctpsink gstsctpsink.c:916:gst_sctpsink_stop:<sink>[00m DPR Chunks flagged for retran		141
+
+(rtpsctpsend:29948): GLib-CRITICAL **: g_source_remove: assertion 'tag > 0' failed
