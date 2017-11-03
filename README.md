@@ -11,7 +11,7 @@ This repo contains a GStreamer SCTP Plugin containing the following two pipeline
 **sctpsrc**
 **sctpsink**
 
-The implementation uses: [libusrsctp](https://github.com/sctplab/usrsctp)
+The implementation uses: [libusrsctp](sctplab/usrsctp)
 
 # Build // Install
 
@@ -123,7 +123,6 @@ specific setup. UDP encapsulation might help with that.
 */etc/fstab* on Sender
 ```
 192.168.153.130:/gst-sctp            /home/slendl/Projects/gst/gst-sctp nfs noauto,x-systemd.automount,x-systemd.device-timeout=10,timeo=14,x-systemd.idle-timeout=1min 0 0
-192.168.153.130:/gstreamer-1.0-build /usr/lib/gstreamer-1.0/            nfs noauto,x-systemd.automount,x-systemd.device-timeout=10,timeo=14,x-systemd.idle-timeout=1min 0 0
 ```
 
 ```bash
