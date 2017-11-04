@@ -29,10 +29,10 @@ TRAPINT() {
    rmdir .receiver_running.lok
    rmdir .receiver_start.lok
 
-   ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
-   ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
-   ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
-   ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+   ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms" 
+   ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
+   ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
+   ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
    exit
 }
 
@@ -119,7 +119,7 @@ fi
 
 all_count=1
 (( all_runs = ${#testing_variants} * ${#testing_delay} * ${#testing_drop} * ${runs} ))
-(( all_time = all_runs * ( num / 24 + 10) ))
+(( all_time = all_runs * ( num / 24 + 20) ))
 date_finished=$(date +"%F %R" -d "+ ${all_time} sec")
 echo "alltogether ${all_runs} runs, ${all_time}s, ETA: ${date_finished}"
 
@@ -134,12 +134,6 @@ for variant in ${testing_variants}; do
          ssh root@${ip_sender} "rm -rf ${TMP_RES_DIR} && mkdir -p ${TMP_RES_DIR}"
 
          echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
-         # simple gilbert p=${drop} > transission to bad stat (=100% drop)
-         # k=25% > transission to good state (0% loss)
-         ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
-         ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
-         ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
-         ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
 
          if (( ${+ntp[1]} )); then
             ssh root@${ip_sender} "systemctl stop ntpd.service && ntpd -gq && systemctl start ntpd.service" &
@@ -163,18 +157,26 @@ for variant in ${testing_variants}; do
             # sync so the receiver realy starts first (only for UDP)
             [[ $variant =~ "udp" ]] && mkdir .receiver_start.lok
 
+            if (( ! ${+nowrite[1]} )); then
+               receiver_tx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
+               receiver_tx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
+               receiver_rx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
+               receiver_rx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
+               sender_tx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
+               sender_tx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
+               sender_rx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
+               sender_rx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
+            fi
+
+	# simple gilbert p=${drop} > transission to bad stat (=100% drop)
+	# k=75% > transission to good state (0% loss)
+	    ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
+	    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
+	    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+	    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
 
             (
             echo -e "\033[0;31m------- Receiver starting\033[0m"
-
-
-            if (( ! ${+nowrite[1]} )); then
-               local receiver_tx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
-               local receiver_tx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
-               local receiver_rx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
-               local receiver_rx_phy2_pre=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
-            fi
-
 
             if (( ${+capture[1]} )); then
                [[ $variant =~ "udp" ]] && prot='udp' || prot='sctp'
@@ -200,29 +202,14 @@ for variant in ${testing_variants}; do
                sudo kill -INT ${tshark_pid}
             fi
 
-            if (( ! ${+nowrite[1]} )); then
-               local receiver_tx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
-               local receiver_tx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
-               local receiver_rx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
-               local receiver_rx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
-               ${=receiver_run} cat > ${TMP_RES_DIR}/receiver_transfered_bytes_${count} <<EOL
-receiver_tx_phy1=$(( receiver_tx_phy1_post - receiver_tx_phy1_pre ))
-receiver_tx_phy2=$(( receiver_tx_phy2_post - receiver_tx_phy2_pre ))
-receiver_rx_phy1=$(( receiver_rx_phy1_post - receiver_rx_phy1_pre ))
-receiver_rx_phy2=$(( receiver_rx_phy2_post - receiver_rx_phy2_pre ))
-EOL
-            fi
-
             echo -e "\033[0;32m------- Receiver finished\033[0m"
             ) &
             receiver_pid=$!
 
+
+
             (
             if (( ! ${+nowrite[1]} )); then
-               sender_tx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
-               sender_tx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
-               sender_rx_phy1_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
-               sender_rx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
             fi
 
             while [[ $variant =~ "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
@@ -248,16 +235,6 @@ EOL
             done
 
             if (( ! ${+nowrite[1]} )); then
-               sender_tx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
-               sender_tx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
-               sender_rx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
-               sender_rx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
-               ${=receiver_run} cat > ${TMP_RES_DIR}/sender_transfered_bytes_${count} <<EOL
-sender_tx_phy1=$(( sender_tx_phy1_post - sender_tx_phy1_pre ))
-sender_tx_phy2=$(( sender_tx_phy2_post - sender_tx_phy2_pre ))
-sender_rx_phy1=$(( sender_rx_phy1_post - sender_rx_phy1_pre ))
-sender_rx_phy2=$(( sender_rx_phy2_post - sender_rx_phy2_pre ))
-EOL
             fi
             echo -e "\033[0;32m------- Sender finished\033[0m"
             ) &
@@ -271,6 +248,29 @@ EOL
 	    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
 	    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
 
+            if (( ! ${+nowrite[1]} )); then
+               local receiver_tx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
+               local receiver_tx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/tx_bytes)
+               local receiver_rx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/rx_bytes)
+               local receiver_rx_phy2_post=$(cat /sys/class/net/${phy2}/statistics/rx_bytes)
+               ${=receiver_run} cat > ${TMP_RES_DIR}/receiver_transfered_bytes_${count} <<EOL
+receiver_tx_phy1=$(( receiver_tx_phy1_post - receiver_tx_phy1_pre ))
+receiver_tx_phy2=$(( receiver_tx_phy2_post - receiver_tx_phy2_pre ))
+receiver_rx_phy1=$(( receiver_rx_phy1_post - receiver_rx_phy1_pre ))
+receiver_rx_phy2=$(( receiver_rx_phy2_post - receiver_rx_phy2_pre ))
+EOL
+
+               sender_tx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/tx_bytes")
+               sender_tx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/tx_bytes")
+               sender_rx_phy1_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy1}/statistics/rx_bytes")
+               sender_rx_phy2_post=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
+               ${=receiver_run} cat > ${TMP_RES_DIR}/sender_transfered_bytes_${count} <<EOL
+sender_tx_phy1=$(( sender_tx_phy1_post - sender_tx_phy1_pre ))
+sender_tx_phy2=$(( sender_tx_phy2_post - sender_tx_phy2_pre ))
+sender_rx_phy1=$(( sender_rx_phy1_post - sender_rx_phy1_pre ))
+sender_rx_phy2=$(( sender_rx_phy2_post - sender_rx_phy2_pre ))
+EOL
+            fi
 
             echo "\033[0;32mrun ${run_id} finished (${all_count}/${all_runs}) ETA: $(date +"%F %R" -d "+ $(( ( all_runs - all_count) * ( num / 24 + 10) )) sec") \033[0m"
             if (( ! ${+nowrite[1]} )); then
