@@ -72,6 +72,7 @@ enum PipelineVariant {
    PIPELINE_CMT,           // 2
    PIPELINE_CMT_DUPL,       // 3
    PIPELINE_CMT_DPR,       // 4
+   PIPELINE_UDP_DUPL,      // 5
 };
 
 gboolean verbose;
@@ -87,7 +88,7 @@ static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
    {"num-buffers", 'n', 0, G_OPTION_ARG_STRING, &num_buffers, "frame count", NULL},
    {"variant", 'V', 0, G_OPTION_ARG_STRING, &variant_string,
-      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dpr " },
+      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dpr|udpdupl " },
    {"timestamp-offset", 'T', 0, G_OPTION_ARG_STRING, &timestamp_offset,
       "timestamp offset to use for systemtime RTP timestamp", NULL},
    {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline, "", NULL},
@@ -118,7 +119,9 @@ main (int argc, char *argv[])
       exit(1);
    }
 
-   if (0 == strncmp(variant_string, "udp", 10)){
+   if (0 == strncmp(variant_string, "udpdupl", 10)){
+      variant = PIPELINE_UDP_DUPL;
+   } else if (0 == strncmp(variant_string, "udp", 10)){
       variant = PIPELINE_UDP;
    } else if (0 == strncmp(variant_string, "single", 10)){
       variant = PIPELINE_SINGLE;
@@ -224,7 +227,21 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    /* GstElement *queue = gst_element_factory_make("queue2", "queue"); */
 
    GstElement *sink;
-   if (variant != PIPELINE_UDP) {
+   if (variant == PIPELINE_UDP ) {
+      sink = gst_element_factory_make("udpsink", "sink");
+      g_object_set(sink,
+            "host",  "192.168.0.1",
+            "port",  55555,
+            "bind-address",  "192.168.0.2",
+            NULL);
+
+   } else if (variant == PIPELINE_UDP_DUPL) {
+      sink = gst_element_factory_make("udpsink", "sink");
+      g_object_set(sink,
+            "clients", "192.168.0.1:51111,128.131.89.238:52222",
+            NULL);
+
+   } else { // SCTP variants
       sink = gst_element_factory_make("sctpsink", "sink");
 
       gst_util_set_object_arg(G_OBJECT(sink), "udp-encaps",  "false");
@@ -267,13 +284,6 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       } else {
          gst_util_set_object_arg(G_OBJECT(sink), "duplication-policy",  "off");
       }
-   } else {
-      sink = gst_element_factory_make("udpsink", "sink");
-      g_object_set(sink,
-            "host",  "192.168.0.1",
-            "bind-address",  "192.168.0.2",
-            "port",  55555,
-            NULL);
    }
 
    /* add to pipeline */

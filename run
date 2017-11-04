@@ -23,7 +23,7 @@ usage() {
 
 zshexit() {
    [[ ! ${+verbose[1]} ]] && set +x
-} 
+}
 
 zparseopts -D -E -- f=fetch b=build u=usrsctp R=norun d:=debug_string v=verbose -dot::=dot_dir \
                     V:=variant -valgrind=valgrind n:=num_buffers T:=timestamp_offset -ntp=ntp \
@@ -42,7 +42,7 @@ if (( ! ${+norun[1]} )); then
    TARGET=$1
    try_bin=${1}/${2}
    if [[ -x $try_bin ]]; then
-      echo "found $try_bin"
+      # echo "found $try_bin"
       BIN=$try_bin
    else
       BIN="${project_dir}/**/${try_bin}(*[1])"

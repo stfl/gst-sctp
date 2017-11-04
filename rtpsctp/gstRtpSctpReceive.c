@@ -61,7 +61,6 @@ void gst_RtpSctpReceiver_create_pipeline_playbin (GstRtpSctpReceiver *RtpSctpRec
 void gst_RtpSctpReceiver_start (GstRtpSctpReceiver *RtpSctpReceiver);
 void gst_RtpSctpReceiver_stop (GstRtpSctpReceiver *RtpSctpReceiver);
 
-
 static gboolean gst_RtpSctpReceiver_handle_message (GstBus *bus, GstMessage *message, gpointer data);
 static gboolean onesecond_timer (gpointer priv);
 /* static gboolean stats_timer (gpointer priv); */
@@ -72,6 +71,7 @@ enum PipelineVariant {
    PIPELINE_CMT,           // 2
    PIPELINE_CMT_DUPL,       // 3
    PIPELINE_CMT_DPR,       // 4
+   PIPELINE_UDP_DUPL,      // 5
 };
 
 gboolean verbose;
@@ -85,7 +85,7 @@ gchar *delay_padding = NULL;
 static GOptionEntry entries[] = {
    {"verbose", 'v', 0, G_OPTION_ARG_NONE, &verbose, "Be verbose", NULL},
    {"variant", 'V', 0, G_OPTION_ARG_STRING, &variant_string,
-      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dbr " },
+      "define the Variant for the experiment to use", " udp|single|cmt|dupl|dpr|udpdupl " },
    {"timestamp-offset", 'T', 0, G_OPTION_ARG_STRING, &timestamp_offset,
       "timestamp offset to use for systemtime RTP timestamp", NULL},
    {"deadline", 'D', 0, G_OPTION_ARG_STRING, &deadline, "", NULL},
@@ -117,7 +117,9 @@ main (int argc, char *argv[])
       exit(1);
    }
 
-   if (0 == strncmp(variant_string, "udp", 10)){
+   if (0 == strncmp(variant_string, "udpdupl", 10)){
+      variant = PIPELINE_UDP_DUPL;
+   } else if (0 == strncmp(variant_string, "udp", 10)){
       variant = PIPELINE_UDP;
    } else if (0 == strncmp(variant_string, "single", 10)){
       variant = PIPELINE_SINGLE;
@@ -191,13 +193,43 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
 
    /* create element */
    GstElement *source;
+   GstElement *source2 = NULL;
+   GstElement *funnel = NULL;
 
-   if (variant != PIPELINE_UDP) {
+   if (variant == PIPELINE_UDP) {
+      source = gst_element_factory_make("udpsrc", "source");
+      g_object_set(G_OBJECT(source),
+            "timeout", 10000000000,  // us > 10s
+            "address", "192.168.0.1",
+            "port",   55555,
+            NULL);
+
+   } else if (variant == PIPELINE_UDP_DUPL) {
+      /* udpsrc1 \
+       *          funnel - jitterbuffer
+       * udpsrc2 /                                             */
+
+      source = gst_element_factory_make("udpsrc", "source");
+      g_object_set(G_OBJECT(source),
+            "timeout", 10000000000,  // us > 10s
+            "address", "192.168.0.1",
+            "port",   51111,
+            NULL);
+      /* gst_util_set_object_arg(G_OBJECT(source), "caps", */
+      /*       "application/x-rtp,clock-rate=(int)90000,payload=(int)96"); */
+
+      source2 = gst_element_factory_make("udpsrc", "source2");
+      g_object_set(G_OBJECT(source2),
+            "address", "128.131.89.238",
+            "port",   52222,
+            NULL);
+      /* gst_util_set_object_arg(G_OBJECT(source2), "caps", */
+      /*       "application/x-rtp,clock-rate=(int)90000,payload=(int)96"); */
+
+      funnel = gst_element_factory_make("funnel", "funnel");
+
+   } else {
       source = gst_element_factory_make("sctpsrc", "source");
-      /* g_object_set(G_OBJECT(source),
-      *       "host",   "11.1.1.1",
-      *       "port",   1117,
-      *       NULL); */
 
       if (variant == PIPELINE_CMT ||
          variant == PIPELINE_CMT_DPR ||
@@ -205,17 +237,15 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          gst_util_set_object_arg(G_OBJECT(source), "cmt",  "true");
          gst_util_set_object_arg(G_OBJECT(source), "buffer-split",  "true");
       }
-   } else {
-      source = gst_element_factory_make("udpsrc", "source");
-      g_object_set(G_OBJECT(source),
-            "timeout", 10000000000,  // us > 10s
-            "port",   55555,
-            NULL);
-
    }
 
+   /* // used with rtpmux
+    * GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
+    *       "clock-rate",     G_TYPE_INT,      90000,
+    *       "payload",        G_TYPE_INT,      96,
+    *       NULL); */
 
-   GstCaps *src_caps = gst_caps_new_simple("application/x-rtp",
+   GstCaps *jb_caps = gst_caps_new_simple("application/x-rtp",
          "media",          G_TYPE_STRING,  "video",
          "clock-rate",     G_TYPE_INT,      90000,
          "encoding-name",  G_TYPE_STRING,  "RAW",
@@ -238,8 +268,8 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          "rfc7273-sync", FALSE,
          "drop-on-latency", TRUE,
          "do-retransmission", FALSE,
-         /* "max-dropout-time",   30, */
-         /* "max-misorder-time",  ,  // ms */
+         "max-dropout-time",   50,
+         "max-misorder-time",  50,  // ms
          NULL);
 
    gst_util_set_object_arg(G_OBJECT(jitterbuffer), "mode",  "slave");
@@ -257,15 +287,34 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
    GstElement *videoconvert = gst_element_factory_make("videoconvert", "videoconvert");
    GstElement *videosink = gst_element_factory_make("ximagesink", "videsink");
 
-
    /* add to pipeline */
-   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, videoconvert, videosink,
-         NULL);
+   gst_bin_add_many(GST_BIN(pipeline), source, rtpdepay, jitterbuffer, videoconvert, videosink, NULL);
 
-   if (!gst_element_link_filtered(source, jitterbuffer, src_caps)) {
-      g_warning ("Failed to link filterd source and jitterbuffer!\n");
+   if (variant == PIPELINE_UDP_DUPL) {
+      gst_bin_add_many(GST_BIN(pipeline), source2, funnel, NULL);
+
+     GstPad *pad, *link_pad;
+
+     link_pad = gst_element_get_static_pad(source, "src");
+     pad = gst_element_get_request_pad(funnel, "sink_%u");
+     gst_pad_link(link_pad, pad);
+     gst_object_unref(pad);
+
+     link_pad = gst_element_get_static_pad(source2, "src");
+     pad = gst_element_get_request_pad(funnel, "sink_%u");
+     gst_pad_link(link_pad, pad);
+     gst_object_unref(pad);
+
+     if (!gst_element_link_filtered(funnel, jitterbuffer, jb_caps)) {
+        g_warning ("Failed to filtered link funnel and jitterbuffer!\n");
+     }
+
+   } else { // link all other, non-duplicated pipelines
+      if (!gst_element_link_filtered(source, jitterbuffer, jb_caps)) {
+         g_warning ("Failed to filtered link source and jitterbuffer!\n");
+      }
    }
-   gst_caps_unref(src_caps);
+   gst_caps_unref(jb_caps);
 
    gst_element_link_many(jitterbuffer, rtpdepay, videoconvert, videosink, NULL);
 

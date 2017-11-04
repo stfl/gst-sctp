@@ -43,7 +43,10 @@ fi
 
 if (( ${+debug[1]} )); then
      DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:5"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5"
+     # DEBUG_SENDER="2"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
+   # DEBUG_RECEIVER="4,GST_REGISTRY:4,task:4,gstutils:5,GST_STATES:3,basesrc:4,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
+   # DEBUG_RECEIVER="5"
    TARGET=$TARGET_DEBUG
 fi
 
@@ -115,6 +118,7 @@ all_count=1
 date_finished=$(date +"%F %R" -d "+ ${all_time} sec")
 echo "alltogether ${all_runs} runs, ${all_time}s, ETA: ${date_finished}"
 
+
 for variant in ${testing_variants}; do
    for delay in ${testing_delay}; do
       for drop in ${testing_drop}; do
@@ -133,12 +137,17 @@ for variant in ${testing_variants}; do
          ${=receiver_root} tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms
 
          if (( ${+ntp[1]} )); then
-            ssh root@${ip_sender} sudo systemctl stop ntpd.service
-            ssh root@${ip_sender} sudo ntpdate ${ip_receiver}
-            if (( $? )); then
-               echo "\033[0;31mNTP failed\033[0m"
-            fi
-            ssh root@${ip_sender} sudo systemctl start ntpd.service
+            ssh root@${ip_sender} "systemctl stop ntpd.service && ntpd -gq && systemctl start ntpd.service" &
+
+            sudo systemctl stop ntpd.service 
+            sudo ntpd -gq 
+            sudo systemctl start ntpd.service
+
+            wait
+            # ntpdate ${ip_receiver}
+            # if (( $? )); then
+            #    echo "\033[0;31mNTP failed\033[0m"
+            # fi
          fi
 
          count=1
@@ -147,7 +156,7 @@ for variant in ${testing_variants}; do
             echo -e "\033[0;31mstarting variant ${variant} with delay= ${delay} drop_rate= ${drop}\033[0m"
 
             # sync so the receiver realy starts first (only for UDP)
-            [[ $variant == "udp" ]] && mkdir .receiver_start.lok
+            [[ $variant =~ "udp" ]] && mkdir .receiver_start.lok
 
 
             (
@@ -163,7 +172,7 @@ for variant in ${testing_variants}; do
 
 
             if (( ${+capture[1]} )); then
-               [[ $variant == "udp" ]] && prot='udp' || prot='sctp'
+               [[ $variant =~ "udp" ]] && prot='udp' || prot='sctp'
                touch ${TMP_RES_DIR}/receiver_${count}.pcap
                chmod o+rw ${TMP_RES_DIR}/receiver_${count}.pcap
                sudo tshark -i ${phy1} -i ${phy2} -f "${prot}" -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
@@ -171,8 +180,8 @@ for variant in ${testing_variants}; do
                sleep 5
             fi
 
-            [[ $variant == "udp" ]] && rmdir .receiver_start.lok
-            [[ $variant != "udp" ]] && mkdir .receiver_running.lok
+            [[ $variant =~ "udp" ]] && rmdir .receiver_start.lok
+            [[ ! $variant =~ "udp" ]] && mkdir .receiver_running.lok
 
             if (( ${+print[1]} )); then
                ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 | tee ${TMP_RES_DIR}/out_receiver_${count}
@@ -180,7 +189,7 @@ for variant in ${testing_variants}; do
                ${=receiver_root} PROJECT_DIR=${project_dir} $RUN $TARGET $RECEIVER -d $DEBUG_RECEIVER -V $variant -D $deadline -T $systime --delay $delay --padding $padding 2>&1 > ${TMP_RES_DIR}/out_receiver_${count}
             fi
 
-            [[ $variant != "udp" ]] && rmdir .receiver_running.lok
+            [[ ! $variant =~ "udp" ]] && rmdir .receiver_running.lok
 
             if (( ${+capture[1]} )); then
                sudo kill -INT ${tshark_pid}
@@ -211,7 +220,7 @@ EOL
                sender_rx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
             fi
 
-            while [[ $variant == "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
+            while [[ $variant =~ "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
             # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
             echo -e "\033[0;31m------- Sender starting\033[0m"
 
@@ -222,7 +231,7 @@ EOL
             fi
 
             local c=0
-            while [[ $variant != "udp" ]] && [ -d .receiver_running.lok ]; do
+            while [[ ! $variant =~ "udp" ]] && [ -d .receiver_running.lok ]; do
                sleep 1
                (( c++ ))
                if (( $c >= 30 )); then
@@ -255,8 +264,11 @@ EOL
             if (( ! ${+nowrite[1]} )); then
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_in.csv ${TMP_RES_DIR}/experiment_trace_in_${count}.csv
                ${=receiver_run} mv ${TMP_RES_DIR}/experiment_trace_out.csv ${TMP_RES_DIR}/experiment_trace_out_${count}.csv
-               ${=receiver_run} mv ${TMP_RES_DIR}/usrsctp_stats_receiver ${TMP_RES_DIR}/usrsctp_stats_receiver_${count}
-               scp -q root@${ip_sender}:${TMP_RES_DIR}/usrsctp_stats_sender ${TMP_RES_DIR}/usrsctp_stats_sender_${count}
+
+               if [[ ! $variant =~ "udp" ]]; then
+                  ${=receiver_run} mv ${TMP_RES_DIR}/usrsctp_stats_receiver ${TMP_RES_DIR}/usrsctp_stats_receiver_${count}
+                  scp -q root@${ip_sender}:${TMP_RES_DIR}/usrsctp_stats_sender ${TMP_RES_DIR}/usrsctp_stats_sender_${count}
+               fi
 
                if (( ! ${+print[1]} )); then
                   scp -q root@${ip_sender}:${TMP_RES_DIR}/out_sender_${count} ${TMP_RES_DIR}/
