@@ -133,7 +133,6 @@ for variant in ${testing_variants}; do
          ${=receiver_run} mkdir -p $TMP_RES_DIR
          ssh root@${ip_sender} "rm -rf ${TMP_RES_DIR} && mkdir -p ${TMP_RES_DIR}"
 
-         echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
 
          if (( ${+ntp[1]} )); then
             ssh root@${ip_sender} "systemctl stop ntpd.service && ntpd -gq && systemctl start ntpd.service" &
@@ -168,6 +167,7 @@ for variant in ${testing_variants}; do
                sender_rx_phy2_pre=$(ssh root@${ip_sender} "cat /sys/class/net/${phy2}/statistics/rx_bytes")
             fi
 
+            echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
 	# simple gilbert p=${drop} > transission to bad stat (=100% drop)
 	# k=75% > transission to good state (0% loss)
 	    ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
