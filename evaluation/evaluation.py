@@ -1,6 +1,6 @@
 import argparse
 import numpy as np
-import numpy.lib.recfunctions as rcfuncs
+#  import numpy.lib.recfunctions as rcfuncs
 import pandas as pd
 
 import shelve
@@ -36,7 +36,7 @@ cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
 
 plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
-               'blue', 'purple', 'fuchsia']
+               'blue', 'purple', 'fuchsia', 'maroon', 'green']
 
 
 class Experiment:
@@ -222,33 +222,25 @@ class Run():
             raise InvalidValue
 
         #  file_experiment_trace_out = path.join(self.run_path, 'experiment_trace_out_' + str(self.run_id) + '.csv')
-        self.trace = np.genfromtxt(file_experiment_trace_in, names=True, delimiter=';', dtype=np.int64)
+        #  self.trace = np.genfromtxt(file_experiment_trace_in, names=True, delimiter=';', dtype=np.int64)
         #  self.trace_jb = np.genfromtxt(self.file_experiment_trace_out, names=True, delimiter=';', dtype=int)
+        self.trace = pd.read_csv(file_experiment_trace_in, delimiter=';')
         if len(self.trace) < cutoff_init:
             print("trace too short")
             raise InvalidValue
+        self.trace_all = self.trace
 
-        # add a new field (column) with delays for each packet
-        self.trace = rcfuncs.append_fields(self.trace, 'ttd', dtypes=np.int64,
-                                           data=self.trace['now'] - self.trace['rtptime'])
-        #  self.trace_jb = rcfuncs.append_fields(self.trace_jb, 'ttd', data=self.trace_jb['now'] - self.trace_jb['rtptime'], dtypes=np.int32)
+        self.trace = self.trace.drop_duplicates('seqnum')  # keeps the first, by index! (which is the lower "now")
+        self.duplicates_unmasked = len(self.trace_all) - len(self.trace)
 
-        duplicates_mask = self.__gen_duplicates_mask()
         # cut off init phase and end phase
-        cutoff_mask = ((self.trace['seqnum'] >= cutoff_init) &
-                       (self.trace['seqnum'] < (self.packets_sent_unmasked - cutoff_end)))
-        #  cutoff_mask_jb = ((self.trace_jb['seqnum'] >= cutoff_init) &
-        #                    (self.trace_jb['seqnum'] < (self.packets_sent_unmasked - cutoff_end)))
-        assert len(cutoff_mask) == len(self.trace) == len(duplicates_mask)
-        #  assert len(cutoff_mask_jb) == len(self.trace_jb)
-        self.trace = self.trace[cutoff_mask & duplicates_mask]
+        self.trace = self.trace[(self.trace.seqnum >= cutoff_init) & (self.trace.seqnum < (self.packets_sent_unmasked - cutoff_end))]
+        self.trace['ttd'] = self.trace.now - self.trace.rtptime
         self.start_time = min(self.trace['rtptime'])
         #  self.trace_jb = self.trace_jb[cutoff_mask_jb]
 
-        # TODO maybe do it in DataFrames all the way...
-        self.trace = pd.DataFrame.from_records(self.trace, index='seqnum')
         if min(self.trace.ttd) <= 0:
-            print("Error in ", file_experiment_trace_in)
+            print("negative ttd in ", file_experiment_trace_in)
             #  fig, ax = plt.subplots()
             #  df = pd.DataFrame(self.trace, columns=['rtptime', 'now']) / 1000000
             #  df.plot(sharey=True, ax=ax)
@@ -258,7 +250,7 @@ class Run():
             #  ax.right_ax.set_ylabel('TTD [ms]')
             #  plt.show()
 
-            raise InvalidValue
+            #  raise InvalidValue
         #  assert min(self.trace.ttd) > 0
 
         # calc DDR
@@ -276,13 +268,13 @@ class Run():
                 raise InvalidValue
 
         self.__calc_transfered_bytes()
-        if self.variant in ('dpr', 'cmt', 'dupl'):
+        if self.variant in ('dpr', 'cmt', 'dupl', 'udpdupl'):
             if (min(self.sender_tx[0], self.sender_tx[1]) * 5 < max(self.sender_tx[0], self.sender_tx[1])):
                 print('multihoming seams not to be used. phy1:{:.0f}kB phy2:{:.0f}kB  diff: {:.0f}kB'
                       .format(self.sender_tx[0]/1000, self.sender_tx[1]/1000, abs(self.sender_tx[0] - self.sender_tx[1])/1000))
                 raise InvalidValue
 
-        if (self.variant != 'udp'):
+        if (self.variant not in ['udp', 'udpdupl']):
             self.__read_usrsctp_stats()
 
     def __read_usrsctp_stats(self):
@@ -415,16 +407,16 @@ class Run():
 
         # TODO for Sender
 
-    def __gen_duplicates_mask(self):
-        '''generate the mask that assigns stores False on the possition of all sequence numbers'''
-        duplicates_mask = [True]  # the first one cannot be a dupl
-        for i in range(1, len(self.trace)):
-            if self.trace['seqnum'][i] in self.trace['seqnum'][:i-1]:
-                duplicates_mask.append(False)
-                self.duplicates_unmasked += 1
-            else:
-                duplicates_mask.append(True)
-        return duplicates_mask
+    #  def __gen_duplicates_mask(self):
+    #      '''generate the mask that assigns stores False on the possition of all sequence numbers'''
+    #      duplicates_mask = [True]  # the first one cannot be a dupl
+    #      for i in range(1, len(self.trace)):
+    #          if self.trace['seqnum'][i] in self.trace['seqnum'][:i-1]:
+    #              duplicates_mask.append(False)
+    #              self.duplicates_unmasked += 1
+    #          else:
+    #              duplicates_mask.append(True)
+    #      return duplicates_mask
 
     @property
     def duplicates(self):
@@ -586,22 +578,29 @@ def plot_hist(exp):
     plt.show()
 
 
-def plot_hist_over_drop(var, delay):
-    plot_hist_multi([e for v, e in all_exp if v == var and e.delay is delay],
+def plot_hist_over_drop(var, delay, drop=all):
+    global all_exp
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay and e.drop_rate in drop],
                     label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates')
 
 
-def plot_hist_over_delay(var, drop_rate):
-    plot_hist_multi([e for v, e in all_exp if v == var and e.drop_rate is drop_rate],
+def plot_hist_over_delay(var, drop):
+    global all_exp
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop)],
                     label="str(e.delay)+'ms'", title='TTD at different Link Delays')
 
 
-def plot_hist_over_var(delay, drop_rate):
-    plot_hist_multi([e for v, e in all_exp if e.drop_rate is drop_rate and e.delay is delay],
+def plot_hist_over_var(delay, drop):
+    global all_exp
+    plot_hist_multi([e for e in all_exp if e.drop_rate == float(drop) and e.delay == delay],
                     label="str(e.variant)", title='TTD at different Duplication Variants')
 
 
 def plot_hist_multi(exps, label, title):
+    if len(exps) == 0:
+        print("Empty experiments list")
+        return
+
     colors = iter(plot_colors)
 
     fig, ax = plt.subplots()
@@ -612,11 +611,23 @@ def plot_hist_multi(exps, label, title):
                                         legend=True, normed=True,
                                         ax=ax, sharey=ax, sharex=ax)
 
-        (e.trace.ttd/1000000).plot.hist(bins=min(150, int(e.ttd_max/1000000/10)), cumulative='True', normed=True,
-                                        label='Cumulative', histtype='step',
-                                        linestyle='-', color=c, linewidth=1,
-                                        legend=False, mark_right=False,
-                                        secondary_y=True, ax=ax, sharey=ax, sharex=ax)
+        ser = (e.trace.ttd/1000000).sort_values()
+        # Now, before proceeding, append again the last (and largest) value. This step is important especially for small sample sizes in order to get an unbiased CDF:
+        ser[len(ser)] = ser.iloc[-1]
+        # the sorted ttd values become the index (x) whereas 0..1 is applied to the y values
+        ser_cdf = pd.Series(np.linspace(0., 1., len(ser)), index=ser)
+        #  exps[0].deadline * 4 / 3
+        #  ser_cdf[600] = 1.
+        # TODO continue plot with 1 afterwards
+        ser_cdf.plot(label='Cumulative', drawstyle='steps', color=c, linewidth=1,
+                     legend=False, mark_right=False,
+                     secondary_y=True, ax=ax, sharey=ax, sharex=ax)
+
+        #  (e.trace.ttd/1000000).plot.hist(bins=min(150, int(e.ttd_max/1000000/10)), cumulative='True', normed=True,
+        #                                  label='Cumulative', histtype='step',
+        #                                  linestyle='-', color=c, linewidth=1,
+        #                                  legend=False, mark_right=False,
+        #                                  secondary_y=True, ax=ax, sharey=ax, sharex=ax)
 
     plt.axvline(x=exps[0].deadline, linestyle='--', color='gray')
 
@@ -631,6 +642,7 @@ def plot_hist_multi(exps, label, title):
 def plot_ddr_over_drop(delay):
     colors = iter(plot_colors)
     fig, ax = plt.subplots()
+    global all_df
 
     all_df_grouped = all_df[all_df.delay == delay].sort_values('drop').groupby('variant', sort=False)
     for t, gr in all_df_grouped:
@@ -656,25 +668,60 @@ def plot_ddr_over_delay(drop):
                 label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
                 ax=ax, sharex=ax, sharey=ax, color=next(colors))
     plt.title('DDR at different Duplication Variants for Drop Rate {:.1f}%'.format(float(drop)))
+
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Delay on the link [%]')
     plt.show()
 
 
-#  def plot_ddr_over_drop():
-#      all_ddr_grouped = all_ddr[all_ddr.delay == 30].sort_values('drop_rate').groupby('variant', sort=False)
-#
-#      fig, ax = plt.subplots()
-#      for t, gr in all_ddr_grouped:
-#          gr.plot(y='ddr', x='drop_rate', ,
-#                  ax=ax, sharex=ax, sharey=ax)
-#          #  import pdb; pdb.set_trace()
-#
-#      plt.show()
+def load_experiements(load_dirs, shelf=False):
+    global all_exp
+    global all_df
+    all_exp = []
+    for r in load_dirs:
+        results_dir = ResultsDir(r)
+        if shelf is False:
+            shelf = shelve.open(path.join(r, "experiments"))
+            shelf_opend = True
+        else:
+            shelf_opend = False
 
-all_df = pd.DataFrame(columns=['variant', 'drop', 'delay', 'hit', 'miss',
-                               'dupl', 'lost', 'ddr', 'runs', 'frames', 'deadline',
-                               'tro', 'ttd_mean'])
+        for run_dir in glob.iglob(r + "/*/"):
+            print('entering:', run_dir)
+            exp_id = run_dir
+            if args.deeprebuild is False and exp_id in shelf:
+                print('loading experiment from shelf')
+                exp = shelf[exp_id]
+            else:
+                exp = Experiment(run_dir, results_dir)
+                shelf[exp_id] = exp
+
+            if exp.num_runs > 0:
+                all_exp.append(exp)
+                all_df = all_df.append({'variant': exp.variant,
+                                        'drop': exp.drop_rate,
+                                        'delay': exp.delay,
+                                        'hit': exp.deadline_hit,
+                                        'miss':  exp.deadline_miss,
+                                        'dupl': exp.duplicates,
+                                        'lost': exp.lost,
+                                        'ddr': exp.ddr,
+                                        'runs': exp.num_runs,
+                                        'frames': exp.num_frames,
+                                        'deadline': exp.deadline,
+                                        'tro': exp.tro,
+                                        'ttd_mean': exp.ttd_mean}, ignore_index=True)
+                #  print(exp)
+            else:
+                print('ignoring this empty experiment', run_dir, '\n')
+            #  exp_id += 1
+        if shelf_opend:
+            self.close()
+
+
+########
+# MAIN #
+########
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--results', action='append', help='dir of restults from the experiment run')
@@ -687,80 +734,52 @@ parser.add_argument('--deeprebuild', nargs='?', default=False, type=bool,
 args = parser.parse_args()
 
 
-def load_experiements(load_dirs):
-    global all_exp
-    global all_df
-    all_exp = []
-    for r in load_dirs:
-        results_dir = ResultsDir(r)
-        with shelve.open(path.join(r, "experiments")) as shelf:
-            for run_dir in glob.iglob(r + "/*/"):
-                print('entering:', run_dir)
-                exp_id = run_dir
-                # TODO change shelve.open to results_dir
-                if args.deeprebuild is False and str(exp_id) in shelf:
-                    #  shelf[str(exp_id)] = exp
-                    print('loading experiment from shelf')
-                    exp = shelf[str(exp_id)]
-                else:
-                    exp = Experiment(run_dir, results_dir)
-                    shelf[str(exp_id)] = exp
+all_exp = []
+all_df = pd.DataFrame(columns=['variant', 'drop', 'delay', 'hit', 'miss', 'dupl', 'lost', 'ddr',
+                               'runs', 'frames', 'deadline', 'tro', 'ttd_mean'])
 
-                if exp.num_runs > 0:
-                    all_exp.append((exp.variant, exp))  # TODO change to flat list
-                    all_df = all_df.append({'variant': exp.variant,
-                                            'drop': exp.drop_rate,
-                                            'delay': exp.delay,
-                                            'hit': exp.deadline_hit,
-                                            'miss':  exp.deadline_miss,
-                                            'dupl': exp.duplicates_unmasked,
-                                            'lost': exp.lost,
-                                            'ddr': exp.ddr,
-                                            'runs': exp.num_runs,
-                                            'frames': exp.num_frames,
-                                            'deadline': exp.deadline,
-                                            'tro': exp.tro,
-                                            'ttd_mean': exp.ttd_mean}, ignore_index=True)
-                    print(exp)
-                else:
-                    print('ignoring this empty experiment', run_dir, '\n')
-                #  exp_id += 1
-
-
+#  import ipdb; ipdb.set_trace()
 if args.lab:
+    #  global all_df
+    #  if args.rebuild is False shelf and 'all_df' in shelf:
+    #      print('loading all experiments')
+    #      all_exp = shelf['all']
+    #  else:
     with shelve.open(path.join(args.lab, "experiments")) as shelf:
-        global all_exp
-        if args.rebuild is False and 'all' in shelf and 'all_df' in shelf:
-            print('loading all experiments')
-            all_exp = shelf['all']
+        if args.rebuild is True or args.deeprebuild is True or 'all_df' not in shelf:
+            # rebuild
+            load_experiements(glob.iglob(args.lab + "/*/"), shelf=shelf)
             all_df = shelf['all_df']
         else:
-            load_experiements(glob.iglob(args.lab + "/*/"))
-            shelf['all'] = all_exp
-            shelf['all_df'] = all_df
+            all_df = shelf['all_df']
+            for r in glob.iglob(args.lab + "/*/*/"):
+                e = shelf[r]
+                if e.num_runs > 0:
+                    all_exp.append(shelf[r])
+
+        #  load_experiements(glob.iglob(args.lab + "/*/"), shelf=shelf)
+    #  shelf['all'] = all_exp
 else:
     load_experiements(args.results)
 
-
-#  import pdb; pdb.set_trace()
 print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 
-#  all_ddr = pd.DataFrame([{'variant': e.variant, 'drop_rate': e.drop_rate,
-#                           'delay': e.delay, 'ddr': e.ddr * 100} for v, e in all_exp],
-#                         columns=['variant', 'drop_rate', 'delay', 'ddr'])
-
-
-    #  all_ddr.plot(colums=['variant', ''])
-
-#  plot_hist_over_delay('udp', drop_rate=15)
+#  plot_hist_over_delay('udp', drop=5)
+plot_hist_over_drop('udp', delay=20, drop=(.5, 2, 5, 10))
+embed()
 #  plot_hist_over_drop('dpr', 60)
 #  plot_hist_over_drop('single', 60)
+
 #  plot_hist_over_drop('udp', 60)
 #  plot_hist_over_drop('dupl', 60)
 #  plot_hist_over_var(60, 10)
 #  plot_ddr_over_drop(delay=40)
 #  plot_ddr_over_delay(drop=8)
 
-embed()
+#  plot_hist_over_drop('udp', delay=30)
+#  plot_hist_over_drop('udpdupl', delay=40)
+#  plot_hist_over_var(drop=5, delay=40)
+
+#  embed()
 
 exit()
