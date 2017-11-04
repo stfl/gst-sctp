@@ -28,6 +28,11 @@ TRAPINT() {
    [[ ! ${+verbose[1]} ]] && set +x
    rmdir .receiver_running.lok
    rmdir .receiver_start.lok
+
+   ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
+   ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
+   ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+   ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
    exit
 }
 
@@ -133,8 +138,8 @@ for variant in ${testing_variants}; do
          # k=25% > transission to good state (0% loss)
          ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
          ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
-         ${=receiver_root} tc qdisc replace dev $phy1 root netem loss ${drop}% 25% delay ${delay}ms
-         ${=receiver_root} tc qdisc replace dev $phy2 root netem loss ${drop}% 25% delay ${delay}ms
+         ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+         ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
 
          if (( ${+ntp[1]} )); then
             ssh root@${ip_sender} "systemctl stop ntpd.service && ntpd -gq && systemctl start ntpd.service" &
@@ -259,6 +264,13 @@ EOL
             sender_pid=$!
 
             wait $sender_pid $receiver_pid
+
+	    # set to 0ms delay and 0% loss..
+	    ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms" 
+	    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
+	    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
+	    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
+
 
             echo "\033[0;32mrun ${run_id} finished (${all_count}/${all_runs}) ETA: $(date +"%F %R" -d "+ $(( ( all_runs - all_count) * ( num / 24 + 10) )) sec") \033[0m"
             if (( ! ${+nowrite[1]} )); then
