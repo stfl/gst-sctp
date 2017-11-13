@@ -11,8 +11,7 @@ import re
 
 from IPython import embed
 from IPython.core import ultratb
-sys.excepthook = ultratb.FormattedTB(mode='Verbose',
-                                     color_scheme='Linux', call_pdb=1)
+sys.excepthook = ultratb.FormattedTB(mode='Verbose', color_scheme='Linux', call_pdb=1)
 
 from eval_exceptions import InvalidValue, ReceiverKilled
 #  from experiment import Experiment
@@ -727,10 +726,8 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--results', action='append', help='dir of restults from the experiment run')
 parser.add_argument('--lab', help='dir of lab_restults (everything in there will be loaded..)')
 parser.add_argument('--experiment', help='the single experiment to analyze')
-parser.add_argument('--rebuild', nargs='?', default=False, type=bool,
-                    help='recollect the experiment results')
-parser.add_argument('--deeprebuild', nargs='?', default=False, type=bool,
-                    help='deep recollect the experiment results')
+parser.add_argument('--rebuild', action="store_true", help='recollect the experiment results')
+parser.add_argument('--deeprebuild', action="store_true", help='deep recollect the experiment results')
 args = parser.parse_args()
 
 
@@ -746,11 +743,14 @@ if args.lab:
     #      all_exp = shelf['all']
     #  else:
     with shelve.open(path.join(args.lab, "experiments")) as shelf:
+        print(args.rebuild, args.deeprebuild)
         if args.rebuild is True or args.deeprebuild is True or 'all_df' not in shelf:
             # rebuild
             load_experiements(glob.iglob(args.lab + "/*/"), shelf=shelf)
-            all_df = shelf['all_df']
+            shelf['all_df'] = all_df
+            #  all_df = shelf['all_df']
         else:
+            print("loading all experiements from the shelve")
             all_df = shelf['all_df']
             for r in glob.iglob(args.lab + "/*/*/"):
                 e = shelf[r]

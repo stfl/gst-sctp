@@ -20,7 +20,7 @@ DEBUG_RECEIVER="sctpsrc:4,rtpsctprecv:4,udpsrc:1"
 TRAPINT() {
    print "Caught SIGINT, aborting."
    kill ${${(v)jobstates##*:*:}%=*}
-   ${=receiver_root} killall rtpsctprecv
+   ${=receiver_root} killall -9 rtpsctprecv
    ${=receiver_root} killall -9 tshark
    ssh root@${ip_sender} 'killall rtpsctpsend'
    wait
@@ -49,7 +49,7 @@ fi
 if (( ${+debug[1]} )); then
      DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:5"
      # DEBUG_SENDER="2"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
    # DEBUG_RECEIVER="4,GST_REGISTRY:4,task:4,gstutils:5,GST_STATES:3,basesrc:4,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
    # DEBUG_RECEIVER="5"
    TARGET=$TARGET_DEBUG
@@ -154,7 +154,8 @@ for variant in ${testing_variants}; do
             echo -e "\033[0;31mstarting variant ${variant} with delay= ${delay} drop_rate= ${drop}\033[0m"
 
             # sync so the receiver realy starts first (only for UDP)
-            [[ $variant =~ "udp" ]] && mkdir .receiver_start.lok
+            # [[ $variant =~ "udp" ]] &&
+               mkdir .receiver_start.lok
 
             if (( ! ${+nowrite[1]} )); then
                receiver_tx_phy1_pre=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
@@ -187,7 +188,8 @@ for variant in ${testing_variants}; do
                sleep 5
             fi
 
-            [[ $variant =~ "udp" ]] && rmdir .receiver_start.lok
+            # [[ $variant =~ "udp" ]] &&
+               rmdir .receiver_start.lok
             [[ ! $variant =~ "udp" ]] && mkdir .receiver_running.lok
 
             if (( ${+print[1]} )); then
@@ -212,7 +214,8 @@ for variant in ${testing_variants}; do
             if (( ! ${+nowrite[1]} )); then
             fi
 
-            while [[ $variant =~ "udp" ]] && [ -d .receiver_start.lok ]; do sleep 1; done
+            # [[ $variant =~ "udp" ]]
+            while [ -d .receiver_start.lok ]; do sleep 1; done
             # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
             echo -e "\033[0;31m------- Sender starting\033[0m"
 
@@ -230,6 +233,7 @@ for variant in ${testing_variants}; do
                   ${=receiver_root} killall rtpsctprecv
                   echo -e "\033[0;31mreceiver killed\033[0m"
                   touch ${TMP_RES_DIR}/receiver_killed_${count}
+                  # wait $receiver_pid
                   break
                fi
             done

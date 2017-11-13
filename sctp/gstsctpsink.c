@@ -93,7 +93,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_CMT                     FALSE
 #define  SCTP_DEFAULT_DUPL_POLICY             "off"
 
-#define SCTP_SNDBUF                           1073741824 // 2^30 = 134MB
+#define SCTP_SNDBUF                           2073741824 // 2^30 = 134MB
 
 #define  SCTP_DEFAULT_DEADLINE_US             450000
 #define  SCTP_DEFAULT_DELAY                   0
@@ -101,7 +101,8 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2|SCTP_DEBUG_OUTPUT2) */
 /* #define SCTP_USRSCTP_DEBUG                  (SCTP_DEBUG_TIMER3|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT2|SCTP_DEBUG_OUTPUT3|SCTP_DEBUG_OUTPUT4) //|SCTP_DEBUG_INDATA1|SCTP_DEBUG_INPUT1) //|SCTP_DEBUG_OUTPUT4) */
-#define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_TIMER3
+#define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_UTIL2
+/* (SCTP_DEBUG_TIMER3|SCTP_DEBUG_UTIL2) */
 // #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
 
 #define SCTP_PPID       99
@@ -638,7 +639,8 @@ gst_sctpsink_start (GstBaseSink * sink)
 
 #ifdef SCTP_DEBUG
    usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);
-   usrsctp_sysctl_set_sctp_logging_level(SCTP_LTRACE_ERROR_ENABLE|SCTP_LTRACE_CHUNK_ENABLE);
+   usrsctp_sysctl_set_sctp_logging_level(SCTP_CWND_LOGGING_ENABLE|SCTP_CWND_MONITOR_ENABLE);
+         /* SCTP_LTRACE_ERROR_ENABLE|SCTP_LTRACE_CHUNK_ENABLE); */
 #endif
 
    usrsctp_sysctl_set_sctp_blackhole(2);
@@ -654,7 +656,7 @@ gst_sctpsink_start (GstBaseSink * sink)
    usrsctp_sysctl_set_sctp_use_cwnd_based_maxburst(0);
    usrsctp_sysctl_set_sctp_fr_max_burst_default(0);
 
-   /* usrsctp_sysctl_set_sctp_sendspace(170048576); // 2^20 */
+   usrsctp_sysctl_set_sctp_sendspace(SCTP_SNDBUF); // 2^20
 
    /* CMT Options */
    if (sctpsink->cmt)
@@ -672,10 +674,10 @@ gst_sctpsink_start (GstBaseSink * sink)
    /* if (usrsctp_set_non_blocking(sctpsink->sock, 0)) */
    /*    GST_ERROR_OBJECT(sctpsink, "usrsctp_set_non_blocking: %s", strerror(errno)); */
 
-   if (usrsctp_setsockopt(sctpsink->sock, SOL_SOCKET, SO_SNDBUF,
-            (const void *)&(int){SCTP_SNDBUF}, (socklen_t)sizeof(int)) < 0) {
-      GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SO_SNDBUF");
-   }
+   /* if (usrsctp_setsockopt(sctpsink->sock, SOL_SOCKET, SO_SNDBUF,
+    *          (const void *)&(int){SCTP_SNDBUF}, (socklen_t)sizeof(int)) < 0) {
+    *    GST_ERROR_OBJECT(sctpsink, "usrsctp_setsockopt SO_SNDBUF");
+    * } */
 
 
    GST_DEBUG_OBJECT(sctpsink, "binding client to: %s, %s port: %d",
@@ -831,10 +833,9 @@ gst_sctpsink_start (GstBaseSink * sink)
    spa.sendv_flags = SCTP_SEND_SNDINFO_VALID;
 
    /* this assures that both paths are connected and bound */
-   if (usrsctp_sendv(sctpsink->sock,
-            "a", 1, NULL, 0,
+   usrsctp_sendv(sctpsink->sock, "a", 1, NULL, 0,
             &spa, (socklen_t)sizeof(struct sctp_sendv_spa),
-            SCTP_SENDV_SPA, 0) < 0);
+            SCTP_SENDV_SPA, 0);
 
    if (usrsctp_set_non_blocking(sctpsink->sock, 0))
       GST_ERROR_OBJECT(sctpsink, "usrsctp_set_non_blocking: %s", strerror(errno));
