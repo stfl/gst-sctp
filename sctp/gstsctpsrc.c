@@ -780,9 +780,9 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
          union sctp_notification *sn = (union sctp_notification *)map.data;
          switch (sn->sn_header.sn_type) {
             case SCTP_SHUTDOWN_EVENT:
-               GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
+               GST_INFO_OBJECT(sctpsrc, "shutdown recieved");
 
-               /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
+               gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc));
                return GST_FLOW_EOS;
             case SCTP_REMOTE_ERROR:
                GST_INFO_OBJECT(sctpsrc, "Remote error received");
