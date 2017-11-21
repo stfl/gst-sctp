@@ -635,7 +635,10 @@ def plot_hist_multi(exps, label, title):
     #  ax.right_ax.set_ylabel('Cumulative')
     plt.xlim((0, exps[0].deadline * 4 / 3))
 
-    plt.show()
+    if args.save:
+        fig.savefig(path.join('./plots/', title.lower().replace(" ", '_') + ".png"))
+    else:
+        plt.show()
 
 
 def plot_ddr_over_drop(delay):
@@ -652,7 +655,10 @@ def plot_ddr_over_drop(delay):
     # TODO add as text
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Packet Drop Rate on the link [%]')
-    plt.show()
+    if args.save:
+        fig.savefig('./plots/ddr_over_drop_delay_%d.png' % delay)
+    else:
+        plt.show()
 
 
 def plot_ddr_over_delay(drop):
@@ -670,7 +676,10 @@ def plot_ddr_over_delay(drop):
 
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Delay on the link [%]')
-    plt.show()
+    if args.save:
+        fig.savefig('./plots/ddr_over_delay_drop_%.1f.png' % float(drop))
+    else:
+        plt.show()
 
 
 def load_experiements(load_dirs, shelf=False):
@@ -727,6 +736,7 @@ parser.add_argument('--results', action='append', help='dir of restults from the
 parser.add_argument('--lab', help='dir of lab_restults (everything in there will be loaded..)')
 parser.add_argument('--experiment', help='the single experiment to analyze')
 parser.add_argument('--rebuild', action="store_true", help='recollect the experiment results')
+parser.add_argument('--save', action="store_true", help='save plots as png')
 parser.add_argument('--deeprebuild', action="store_true", help='deep recollect the experiment results')
 args = parser.parse_args()
 
