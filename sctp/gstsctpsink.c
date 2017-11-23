@@ -93,7 +93,7 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 #define  SCTP_DEFAULT_CMT                     FALSE
 #define  SCTP_DEFAULT_DUPL_POLICY             "off"
 
-#define SCTP_SNDBUF                           6073741824 // 2^30 = 134MB
+#define SCTP_SNDBUF                           4294967295U // 2^30 = 134MB
 
 #define  SCTP_DEFAULT_DEADLINE_US             450000
 #define  SCTP_DEFAULT_DELAY                   0
@@ -656,7 +656,8 @@ gst_sctpsink_start (GstBaseSink * sink)
    usrsctp_sysctl_set_sctp_use_cwnd_based_maxburst(0);
    usrsctp_sysctl_set_sctp_fr_max_burst_default(0);
 
-   usrsctp_sysctl_set_sctp_sendspace(SCTP_SNDBUF); // 2^20
+   usrsctp_sysctl_set_sctp_sendspace(SCTP_SNDBUF);
+   usrsctp_sysctl_set_sctp_max_chunks_on_queue(8192);
 
    /* CMT Options */
    if (sctpsink->cmt)
