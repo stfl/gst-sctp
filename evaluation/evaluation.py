@@ -579,20 +579,20 @@ def plot_hist(exp):
 
 def plot_hist_over_drop(var, delay, drop=all):
     global all_exp
-    plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay and e.drop_rate in drop],
-                    label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates')
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay and (drop == all or e.drop_rate in drop)],
+                    label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates %s %dms' % (var, delay))
 
 
 def plot_hist_over_delay(var, drop):
     global all_exp
     plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop)],
-                    label="str(e.delay)+'ms'", title='TTD at different Link Delays')
+                    label="str(e.delay)+'ms'", title='TTD at different Link Delays {} {:.1f}%'.format(var, drop))
 
 
 def plot_hist_over_var(delay, drop):
     global all_exp
     plot_hist_multi([e for e in all_exp if e.drop_rate == float(drop) and e.delay == delay],
-                    label="str(e.variant)", title='TTD at different Duplication Variants')
+                    label="str(e.variant)", title='TTD at different Duplication Variants %dms %.1f%%' % (delay, drop))
 
 
 def plot_hist_multi(exps, label, title):
@@ -614,8 +614,7 @@ def plot_hist_multi(exps, label, title):
         # Now, before proceeding, append again the last (and largest) value. This step is important especially for small sample sizes in order to get an unbiased CDF:
         ser[len(ser)] = ser.iloc[-1]
         # the sorted ttd values become the index (x) whereas 0..1 is applied to the y values
-        ser_cdf = pd.Series(np.linspace(0., 1., len(ser)), index=ser)
-        #  exps[0].deadline * 4 / 3
+        ser_cdf = pd.Series(np.linspace(0., e.ddr, len(ser)), index=ser)
         #  ser_cdf[600] = 1.
         # TODO continue plot with 1 afterwards
         ser_cdf.plot(label='Cumulative', drawstyle='steps', color=c, linewidth=1,
@@ -636,7 +635,10 @@ def plot_hist_multi(exps, label, title):
     plt.xlim((0, exps[0].deadline * 4 / 3))
 
     if args.save:
-        fig.savefig(path.join('./plots/', title.lower().replace(" ", '_') + ".png"))
+        save_file = path.join('./plots/', title.lower().replace(" ", '_').replace('%', '') + ".png")
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
     else:
         plt.show()
 
@@ -656,15 +658,17 @@ def plot_ddr_over_drop(delay):
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Packet Drop Rate on the link [%]')
     if args.save:
-        fig.savefig('./plots/ddr_over_drop_delay_%d.png' % delay)
+        save_file = './plots/ddr_over_drop_at_delay_%03dms.png' % delay
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
     else:
         plt.show()
 
 
 def plot_ddr_over_delay(drop):
-    colors = iter(['blue', 'red', 'green', 'orange', 'darkviolet'])
+    colors = iter(plot_colors)
     # TODO sort colors
-    #  colors = iter(plot_colors)
     fig, ax = plt.subplots()
 
     all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values('delay').groupby('variant', sort=False)
@@ -677,7 +681,10 @@ def plot_ddr_over_delay(drop):
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Delay on the link [%]')
     if args.save:
-        fig.savefig('./plots/ddr_over_delay_drop_%.1f.png' % float(drop))
+        save_file = './plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop)
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
     else:
         plt.show()
 
@@ -774,9 +781,65 @@ else:
 
 print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_ddr_over_delay(drop=i)
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    plot_ddr_over_drop(delay=i)
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='dpr')
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='dupl')
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='udp')
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='udpdupl')
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='single')
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_delay(drop=i, var='cmt')
+
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='cmt')
+    plot_hist_over_drop(delay=i, var='cmt', drop=(.2, 2, 5, 10))
+
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='dupl')
+    plot_hist_over_drop(delay=i, var='dupl', drop=(.2, 2, 5, 10))
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='single')
+    plot_hist_over_drop(delay=i, var='single', drop=(.2, 2, 5, 10))
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='udp')
+    plot_hist_over_drop(delay=i, var='udp', drop=(.2, 2, 5, 10))
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='dpr')
+    plot_hist_over_drop(delay=i, var='dpr', drop=(.2, 2, 5, 10))
+
+for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+    #  plot_hist_over_drop(delay=i, var='udpdupl')
+    plot_hist_over_drop(delay=i, var='udpdupl', drop=(.2, 2, 5, 10))
+
+
+for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+    plot_hist_over_var(drop=i, delay=120)
+    plot_hist_over_var(drop=i, delay=150)
+    plot_hist_over_var(drop=i, delay=80)
+
+
 #  plot_hist_over_delay('udp', drop=5)
-plot_hist_over_drop('udp', delay=20, drop=(.5, 2, 5, 10))
-embed()
+#  plot_hist_over_drop('udp', delay=20, drop=(.5, 2, 5, 10))
 #  plot_hist_over_drop('dpr', 60)
 #  plot_hist_over_drop('single', 60)
 
@@ -790,6 +853,6 @@ embed()
 #  plot_hist_over_drop('udpdupl', delay=40)
 #  plot_hist_over_var(drop=5, delay=40)
 
-#  embed()
+embed()
 
 exit()
