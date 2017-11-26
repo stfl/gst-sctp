@@ -591,23 +591,6 @@ usrsctp_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data, s
          GST_DEBUG("Msg of length %d received from %s:%u on stream %d with SSN %u and TSN %u, PPID %u, context %u",
                (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn, ntohl(rcv.rcv_ppid),
                rcv.rcv_context);
-         if (flags & MSG_EOR) {
-            struct sctp_sndinfo snd_info;
-
-            snd_info.snd_sid = rcv.rcv_sid;
-            snd_info.snd_flags = 0;
-            if (rcv.rcv_flags & SCTP_UNORDERED) {
-               snd_info.snd_flags |= SCTP_UNORDERED;
-            }
-            snd_info.snd_ppid = rcv.rcv_ppid;
-            snd_info.snd_context = 0;
-            snd_info.snd_assoc_id = rcv.rcv_assoc_id;
-
-            if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
-                     SCTP_SENDV_SNDINFO, 0) < 0) {
-               GST_ERROR("sctp_sendv");
-            }
-         }
       }
       free(data);
    } else {
@@ -658,6 +641,7 @@ gst_sctpsink_start (GstBaseSink * sink)
 
    usrsctp_sysctl_set_sctp_sendspace(SCTP_SNDBUF);
    usrsctp_sysctl_set_sctp_max_chunks_on_queue(8192);
+   usrsctp_sysctl_set_sctp_path_pf_threshold(2);
 
    /* CMT Options */
    if (sctpsink->cmt)

@@ -29,7 +29,8 @@ TRAPINT() {
    rmdir .receiver_running.lok
    rmdir .receiver_start.lok
 
-   ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms" 
+   sudo ip link set $phy2 up
+   ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms"
    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
@@ -40,7 +41,7 @@ TRAPINT() {
    # return -1
 # }
 
-zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture -commit=commit P=print
+zparseopts -D -E -- R=remote v=verbose n:=num_runs d=debug -ntp=ntp W=nowrite C=capture -commit=commit P=print -pf=path_failure
 
 if (( ${+verbose[1]} )); then
    set -x
@@ -49,7 +50,7 @@ fi
 if (( ${+debug[1]} )); then
      DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:3,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:5"
      # DEBUG_SENDER="2"
-   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
+   DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:5,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
    # DEBUG_RECEIVER="4,GST_REGISTRY:4,task:4,gstutils:5,GST_STATES:3,basesrc:4,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"
    # DEBUG_RECEIVER="5"
    TARGET=$TARGET_DEBUG
@@ -78,6 +79,7 @@ local deadline=${DEADLINE:-450}
 local num=${NUM:-2000}
 local padding=${PADDING:-60}
 local runs=${num_runs[2]:-1}
+local pf_wait=${PF_WAIT:-2}
 
 if (( ${+VARIANT} )); then
    local -a testing_variants=(${=VARIANT})
@@ -91,7 +93,10 @@ else
    # typeset -a testing_delay
    local -a testing_delay=(5 20 40 60 80 100)
 fi
-if (( ${+DROP} )); then
+
+if (( ${+path_failure[1]} )); then
+   local -a testing_drop=(0)
+elif (( ${+DROP} )); then
    local -a testing_drop=(${=DROP})
 else
    # typeset -a testing_drop
@@ -137,8 +142,8 @@ for variant in ${testing_variants}; do
          if (( ${+ntp[1]} )); then
             ssh root@${ip_sender} "systemctl stop ntpd.service && ntpd -gq && systemctl start ntpd.service" &
 
-            sudo systemctl stop ntpd.service 
-            sudo ntpd -gq 
+            sudo systemctl stop ntpd.service
+            sudo ntpd -gq
             sudo systemctl start ntpd.service
 
             wait
@@ -169,12 +174,12 @@ for variant in ${testing_variants}; do
             fi
 
             echo "\033[0;31msetting delay= ${delay} drop_rate= ${drop}\033[0m"
-	# simple gilbert p=${drop} > transission to bad stat (=100% drop)
-	# k=75% > transission to good state (0% loss)
-	    ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms" 
-	    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
-	    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
-	    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+            # simple gilbert p=${drop} > transission to bad stat (=100% drop)
+            # k=75% > transission to good state (0% loss)
+            ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
+            ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms"
+            ${=receiver_root} tc qdisc replace dev $phy1 root netem loss gemodel ${drop}% 75% delay ${delay}ms
+            ${=receiver_root} tc qdisc replace dev $phy2 root netem loss gemodel ${drop}% 75% delay ${delay}ms
 
             (
             echo -e "\033[0;31m------- Receiver starting\033[0m"
@@ -209,14 +214,8 @@ for variant in ${testing_variants}; do
             receiver_pid=$!
 
 
-
             (
-            if (( ! ${+nowrite[1]} )); then
-            fi
-
-            # [[ $variant =~ "udp" ]]
             while [ -d .receiver_start.lok ]; do sleep 1; done
-            # [ $variant == "udp" ]] && echo "receiver unlocked starting sender"
             echo -e "\033[0;31m------- Sender starting\033[0m"
 
             if (( ${+print[1]} )); then
@@ -226,7 +225,7 @@ for variant in ${testing_variants}; do
             fi
 
             local c=0
-            while [[ ! $variant =~ "udp" ]] && [ -d .receiver_running.lok ]; do
+            while [[ ! $variant =~ "udp" ]] && [ -d .receiver_running.lok ]; do 
                sleep 1
                (( c++ ))
                if (( $c >= 30 )); then
@@ -244,13 +243,26 @@ for variant in ${testing_variants}; do
             ) &
             sender_pid=$!
 
+            if (( ${+path_failure[1]} )); then
+               while [ -d .receiver_start.lok ]; do sleep 1; done
+               sleep $pf_wait
+               sudo ip link set $phy2 down
+               echo -e "\033[0;32m------- interface $phy2 taken down\033[0m"
+            fi
+
             wait $sender_pid $receiver_pid
 
-	    # set to 0ms delay and 0% loss..
-	    ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms" 
-	    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
-	    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
-	    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
+            if (( ${+path_failure[1]} )); then
+               sudo ip link set $phy2 up
+               while ! ip -o -4 a s $phy2 | grep "192.168" -q; do; done
+               echo -e "\033[0;32m------- interface $phy2 brought up\033[0m"
+            fi
+
+            # set to 0ms delay and 0% loss..
+            ssh root@${ip_sender} "tc qdisc replace dev $phy1 root netem loss 0% delay 0ms"
+            ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
+            ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
+            ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
 
             if (( ! ${+nowrite[1]} )); then
                local receiver_tx_phy1_post=$(cat /sys/class/net/${phy1}/statistics/tx_bytes)
@@ -294,9 +306,8 @@ EOL
             (( all_count++ ))
          done
 
-         echo "\033[0;32mall runs finished ID: ${run_id} >> writing results to ${project_dir}/results/${run_date}/${run_id}\033[0m"
-
          if (( ! ${+nowrite[1]} )); then
+            echo "\033[0;32mall runs finished ID: ${run_id} >> writing results to ${project_dir}/results/${run_date}/${run_id}\033[0m"
             ${=receiver_run} mkdir -p ${project_dir}/results/${run_date}/${run_id}
             ${=receiver_run} mv ${TMP_RES_DIR}/* ${project_dir}/results/${run_date}/${run_id}
             ${=receiver_run} cat > ${project_dir}/results/${run_date}/${run_id}/run_config <<EOL

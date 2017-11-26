@@ -76,6 +76,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_SRC_PORT             11111
 
 #define SCTP_DEFAULT_ASSOC_VALUE           47
+#define SCTP_ASSOC_TIMEOUT                 10  // s
 
 #define  SCTP_DEFAULT_BS                   FALSE
 #define  SCTP_DEFAULT_CMT                  FALSE
@@ -499,7 +500,7 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    /* subscribe to the given events in event_types[] */
    struct sctp_event event;
    uint16_t event_types[] = {SCTP_SHUTDOWN_EVENT
-                           /* , SCTP_ASSOC_CHANGE */
+                           , SCTP_ASSOC_CHANGE
                            /* , SCTP_PEER_ADDR_CHANGE */
                            , SCTP_REMOTE_ERROR
                            /* , SCTP_ADAPTATION_INDICATION */
@@ -520,6 +521,12 @@ static gboolean gst_sctpsrc_start(GstBaseSrc *src)
    if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_NODELAY,
             (const void *)&(int){1}, (socklen_t)sizeof(int)) < 0) {
       GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_NODELAY");
+   }
+
+   int sctp_assoc_timeout = SCTP_ASSOC_TIMEOUT;
+   if (usrsctp_setsockopt(sctpsrc->sock, IPPROTO_SCTP, SCTP_AUTOCLOSE,
+                          (const void *)&sctp_assoc_timeout, (socklen_t)sizeof(int)) < 0) {
+      GST_ERROR_OBJECT(sctpsrc, "usrsctp_setsockopt SCTP_AUTOCLOSE");
    }
 
    struct sockaddr_in addr4[2];
@@ -781,9 +788,16 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
          switch (sn->sn_header.sn_type) {
             case SCTP_SHUTDOWN_EVENT:
                GST_INFO_OBJECT(sctpsrc, "Shutdown revieved");
-
-               /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
                return GST_FLOW_EOS;
+            case SCTP_ASSOC_CHANGE:
+               if ((sn->sn_assoc_change.sac_state == SCTP_COMM_LOST) ||
+                   (sn->sn_assoc_change.sac_state == SCTP_SHUTDOWN_COMP)) {
+                 GST_INFO_OBJECT(sctpsrc, "Association went down");
+                 return GST_FLOW_EOS;
+               } else {
+                 GST_INFO_OBJECT(sctpsrc, "assoc change received: %d", sn->sn_assoc_change.sac_state);
+               }
+               break;
             case SCTP_REMOTE_ERROR:
                GST_INFO_OBJECT(sctpsrc, "Remote error received");
                /* gst_sctpsrc_stop(GST_BASE_SRC(sctpsrc)); */
@@ -853,65 +867,5 @@ static GstFlowReturn gst_sctpsrc_create(GstPushSrc *src, GstBuffer **buf) {
  *
  *   return GST_FLOW_OK;
  * } */
-
-static int sctpsrc_receive_cb(struct socket *sock, union sctp_sockstore addr, void *data,
-                              size_t datalen, struct sctp_rcvinfo rcv, int flags, void *ulp_info) {
-   char namebuf[INET6_ADDRSTRLEN];
-   const char *name;
-   uint16_t port;
-
-   if (data) {
-      if (flags & MSG_NOTIFICATION) {
-         GST_INFO("Notification of length %d received.", (int)datalen);
-      } else {
-         switch (addr.sa.sa_family) {
-#ifdef INET
-         case AF_INET:
-            name = inet_ntop(AF_INET, &addr.sin.sin_addr, namebuf, INET_ADDRSTRLEN);
-            port = ntohs(addr.sin.sin_port);
-            break;
-#endif
-#ifdef INET6
-         case AF_INET6:
-            name = inet_ntop(AF_INET6, &addr.sin6.sin6_addr, namebuf, INET6_ADDRSTRLEN),
-            port = ntohs(addr.sin6.sin6_port);
-            break;
-#endif
-         case AF_CONN:
-            snprintf(namebuf, INET6_ADDRSTRLEN, "%p", addr.sconn.sconn_addr);
-            name = namebuf;
-            port = ntohs(addr.sconn.sconn_port);
-            break;
-         default:
-            name = NULL;
-            port = 0;
-            break;
-         }
-         GST_INFO("Msg of length %d received from %s:%u on stream %d with SSN %u "
-                  "and TSN %u, PPID "
-                  "%u, context %u.",
-                  (int)datalen, name, port, rcv.rcv_sid, rcv.rcv_ssn, rcv.rcv_tsn,
-                  ntohl(rcv.rcv_ppid), rcv.rcv_context);
-         if (flags & MSG_EOR) {
-            struct sctp_sndinfo snd_info;
-
-            snd_info.snd_sid   = rcv.rcv_sid;
-            snd_info.snd_flags = 0;
-            if (rcv.rcv_flags & SCTP_UNORDERED) {
-               snd_info.snd_flags |= SCTP_UNORDERED;
-            }
-            snd_info.snd_ppid     = rcv.rcv_ppid;
-            snd_info.snd_context  = 0;
-            snd_info.snd_assoc_id = rcv.rcv_assoc_id;
-            if (usrsctp_sendv(sock, data, datalen, NULL, 0, &snd_info, sizeof(struct sctp_sndinfo),
-                              SCTP_SENDV_SNDINFO, 0) < 0) {
-               GST_ERROR("sctp_sendv");
-            }
-         }
-      }
-      free(data);
-   }
-   return (1);
-}
 
 // vim: ft=c
