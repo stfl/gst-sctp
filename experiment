@@ -188,7 +188,7 @@ for variant in ${testing_variants}; do
                [[ $variant =~ "udp" ]] && prot='udp' || prot='sctp'
                touch ${TMP_RES_DIR}/receiver_${count}.pcap
                chmod o+rw ${TMP_RES_DIR}/receiver_${count}.pcap
-               sudo tshark -i ${phy2} -f "${prot} and src 192.168.0.2" -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
+               sudo tshark -i ${phy2} -f "${prot} and src 192.168.0.2" -s 1500 -w ${TMP_RES_DIR}/receiver_${count}.pcap 2>&1 >/dev/null &
                tshark_pid=$!
                sleep 5
             fi
