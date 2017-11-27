@@ -76,7 +76,7 @@ GST_DEBUG_CATEGORY_STATIC(gst_sctpsrc_debug_category);
 #define  SCTP_DEFAULT_SRC_PORT             11111
 
 #define SCTP_DEFAULT_ASSOC_VALUE           47
-#define SCTP_ASSOC_TIMEOUT                 10  // s
+#define SCTP_ASSOC_TIMEOUT                 15  // s
 
 #define  SCTP_DEFAULT_BS                   FALSE
 #define  SCTP_DEFAULT_CMT                  FALSE
