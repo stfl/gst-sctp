@@ -5,7 +5,7 @@ import pandas as pd
 
 import shelve
 import sys
-from os import path
+import os
 import glob
 import re
 
@@ -57,7 +57,7 @@ class Experiment:
         #  assert len(self.all_ttd_jb) + self.lost == self.packets_sent
 
     def __collect_runs(self):
-        with open(path.join(self.run_path, "run_config")) as run_config_file:
+        with open(os.path.join(self.run_path, "run_config")) as run_config_file:
             run_config = run_config_file.read()
 
             match = re.search(r"variant=(\S+)", run_config)
@@ -210,17 +210,17 @@ class Run():
         self.duplicates_unmasked = 0
         self.packets_sent_unmasked = self.results_dir.num_frames * num_packets_per_frame
         self.packets_sent = self.packets_sent_unmasked - cutoff_init - cutoff_end
-        self.receiver_killed = path.isfile(path.join(self.run_path, 'receiver_killed_' + str(self.run_id)))
+        self.receiver_killed = os.path.isfile(os.path.join(self.run_path, 'receiver_killed_' + str(self.run_id)))
         if self.receiver_killed:
             print('receiver killed')
             raise ReceiverKilled
 
-        file_experiment_trace_in = path.join(self.run_path, 'experiment_trace_in_' + str(self.run_id) + '.csv')
-        if not path.isfile(file_experiment_trace_in):
+        file_experiment_trace_in = os.path.join(self.run_path, 'experiment_trace_in_' + str(self.run_id) + '.csv')
+        if not os.path.isfile(file_experiment_trace_in):
             print("trace not found")
             raise InvalidValue
 
-        #  file_experiment_trace_out = path.join(self.run_path, 'experiment_trace_out_' + str(self.run_id) + '.csv')
+        #  file_experiment_trace_out = os.path.join(self.run_path, 'experiment_trace_out_' + str(self.run_id) + '.csv')
         #  self.trace = np.genfromtxt(file_experiment_trace_in, names=True, delimiter=';', dtype=np.int64)
         #  self.trace_jb = np.genfromtxt(self.file_experiment_trace_out, names=True, delimiter=';', dtype=int)
         self.trace = pd.read_csv(file_experiment_trace_in, delimiter=';')
@@ -258,7 +258,7 @@ class Run():
         self.deadline_miss = len(self.trace) - self.deadline_hit
         self.ddr = float(self.deadline_hit / self.packets_sent)
 
-        with open(path.join(self.run_path, "out_sender_" + str(self.run_id))) as out_sender_file:
+        with open(os.path.join(self.run_path, "out_sender_" + str(self.run_id))) as out_sender_file:
             out_sender = out_sender_file.read()
             self.sender_buffer_blocked = len(re.findall(r"usrsctp_sendv failed:", out_sender))
             if self.sender_buffer_blocked > self.packets_sent_unmasked * 0.2:
@@ -267,7 +267,7 @@ class Run():
                 raise InvalidValue
 
         self.__calc_transfered_bytes()
-        if self.variant in ('dpr', 'cmt', 'dupl', 'udpdupl'):
+        if self.variant in ('dpr', 'cmt', 'dupl', 'udpdupl') and args.pathfailure is False:
             if (min(self.sender_tx[0], self.sender_tx[1]) * 5 < max(self.sender_tx[0], self.sender_tx[1])):
                 print('multihoming seams not to be used. phy1:{:.0f}kB phy2:{:.0f}kB  diff: {:.0f}kB'
                       .format(self.sender_tx[0]/1000, self.sender_tx[1]/1000, abs(self.sender_tx[0] - self.sender_tx[1])/1000))
@@ -277,7 +277,7 @@ class Run():
             self.__read_usrsctp_stats()
 
     def __read_usrsctp_stats(self):
-        with open(path.join(self.run_path, "usrsctp_stats_receiver_" + str(self.run_id))) as usrsctp_stats_receiver_file:
+        with open(os.path.join(self.run_path, "usrsctp_stats_receiver_" + str(self.run_id))) as usrsctp_stats_receiver_file:
             usrsctp_stats_receiver = usrsctp_stats_receiver_file.read()
 
             match = re.search(r"sent_packets=(\d+)", usrsctp_stats_receiver)
@@ -305,7 +305,7 @@ class Run():
             assert match is not None
             self.receiver_recv_sacks = int(match[1])
 
-        with open(path.join(self.run_path, "usrsctp_stats_sender_" + str(self.run_id))) as usrsctp_stats_sender_file:
+        with open(os.path.join(self.run_path, "usrsctp_stats_sender_" + str(self.run_id))) as usrsctp_stats_sender_file:
             usrsctp_stats_sender = usrsctp_stats_sender_file.read()
 
             match = re.search(r"sent_packets=(\d+)", usrsctp_stats_sender)
@@ -337,7 +337,7 @@ class Run():
             #  abandoned_unsent=0
 
     def __calc_transfered_bytes(self):
-        with open(path.join(self.run_path, "sender_transfered_bytes_" + str(self.run_id))) as sender_tr_file:
+        with open(os.path.join(self.run_path, "sender_transfered_bytes_" + str(self.run_id))) as sender_tr_file:
             sender = sender_tr_file.read()
             match = re.search(r"sender_tx_phy1=(\d+)", sender)
             assert match is not None
@@ -356,7 +356,7 @@ class Run():
             assert match is not None
             self.sender_rx.append(int(match[1]))
 
-        with open(path.join(self.run_path, "receiver_transfered_bytes_" + str(self.run_id))) as receiver_tr_file:
+        with open(os.path.join(self.run_path, "receiver_transfered_bytes_" + str(self.run_id))) as receiver_tr_file:
             receiver = receiver_tr_file.read()
             match = re.search(r"receiver_tx_phy1=(\d+)", receiver)
             assert match is not None
@@ -375,29 +375,29 @@ class Run():
             assert match is not None
             self.receiver_rx.append(int(match[1]))
 
-        #  pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_pre_' + str(self.run_id)))
-        #  post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_post_' + str(self.run_id)))
+        #  pre = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_pre_' + str(self.run_id)))
+        #  post = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_post_' + str(self.run_id)))
         #  self.receiver_rx = [int(post.read()) - int(pre.read())]
         #  pre.close()
         #  post.close()
         #
-        #  pre = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_pre_' + str(self.run_id)))
-        #  post = open(path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_post_' + str(self.run_id)))
+        #  pre = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_pre_' + str(self.run_id)))
+        #  post = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_post_' + str(self.run_id)))
         #  self.receiver_rx.append(int(post.read()) - int(pre.read()))
         #  pre.close()
         #  post.close()
         #
         #  # TODO for tx bytes
         #
-        #  pre = open(path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_pre_' + str(self.run_id)))
-        #  post = open(path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_post_' + str(self.run_id)))
+        #  pre = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_pre_' + str(self.run_id)))
+        #  post = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_post_' + str(self.run_id)))
         #  embed()
         #  self.sender_tx = [int(re.match(r'(\d*)', post.read())[1]) - int(re.match(r'\d*', pre.read()))]
         #  pre.close()
         #  post.close()
         #
-        #  pre = open(path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_pre_' + str(self.run_id)))
-        #  post = open(path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_post_' + str(self.run_id)))
+        #  pre = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_pre_' + str(self.run_id)))
+        #  post = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_post_' + str(self.run_id)))
         #  self.sender_tx.append(int(post.read()) - int(pre.read()))
         #  pre.close()
         #  post.close()
@@ -491,7 +491,7 @@ class Run():
 class ResultsDir():
     def __init__(self, rpath):
         self.results_path = rpath
-        with open(path.join(self.results_path, "experiments_config")) as exps_config_file:
+        with open(os.path.join(self.results_path, "experiments_config")) as exps_config_file:
             exps_config = exps_config_file.read()
 
             match = re.search(r'project_dir=(\S+)', exps_config)
@@ -553,9 +553,9 @@ class ResultsDir():
             #  num_runs = min(2, num_runs)  # TODO force only 2
 
 
-#  def plot_delay_over_time(run):
-#      t, ttd = exp.runs[0].delay_over_time()
-#      plt.plot(t / 1000000000, ttd / 1000000, 'r.')
+def plot_delay_over_time(run):
+    t, ttd = run.delay_over_time()
+    plt.plot(t / 1000000000, ttd / 1000000, 'r.')
 
 
 def plot_hist(exp):
@@ -635,7 +635,7 @@ def plot_hist_multi(exps, label, title):
     plt.xlim((0, exps[0].deadline * 4 / 3))
 
     if args.save:
-        save_file = path.join('./plots/', title.lower().replace(" ", '_').replace('%', '') + ".png")
+        save_file = os.path.join(args.lab, 'plots/', title.lower().replace(" ", '_').replace('%', '') + ".png")
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -658,7 +658,8 @@ def plot_ddr_over_drop(delay):
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Packet Drop Rate on the link [%]')
     if args.save:
-        save_file = './plots/ddr_over_drop_at_delay_%03dms.png' % delay
+        save_file = os.path.join(args.lab, 'plots/ddr_over_drop_at_delay_%03dms.png' % delay)
+        #  save_file = './plots/ddr_over_drop_at_delay_%03dms.png' % delay
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -681,7 +682,8 @@ def plot_ddr_over_delay(drop):
     ax.set_ylabel('DDR [%]')
     ax.set_xlabel('Delay on the link [%]')
     if args.save:
-        save_file = './plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop)
+        save_file = os.path.join(args.lab, 'plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop))
+        #  save_file = './plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop)
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -694,9 +696,12 @@ def load_experiements(load_dirs, shelf=False):
     global all_df
     all_exp = []
     for r in load_dirs:
+        if 'plot' in r:
+            print('plot dir')
+            continue
         results_dir = ResultsDir(r)
         if shelf is False:
-            shelf = shelve.open(path.join(r, "experiments"))
+            shelf = shelve.open(os.path.join(r, "experiments"))
             shelf_opend = True
         else:
             shelf_opend = False
@@ -744,6 +749,8 @@ parser.add_argument('--lab', help='dir of lab_restults (everything in there will
 parser.add_argument('--experiment', help='the single experiment to analyze')
 parser.add_argument('--rebuild', action="store_true", help='recollect the experiment results')
 parser.add_argument('--save', action="store_true", help='save plots as png')
+parser.add_argument('--plotall', action="store_true", help='')
+parser.add_argument('--pathfailure', action="store_true", help='')
 parser.add_argument('--deeprebuild', action="store_true", help='deep recollect the experiment results')
 args = parser.parse_args()
 
@@ -752,14 +759,14 @@ all_exp = []
 all_df = pd.DataFrame(columns=['variant', 'drop', 'delay', 'hit', 'miss', 'dupl', 'lost', 'ddr',
                                'runs', 'frames', 'deadline', 'tro', 'ttd_mean'])
 
-#  import ipdb; ipdb.set_trace()
+
 if args.lab:
     #  global all_df
     #  if args.rebuild is False shelf and 'all_df' in shelf:
     #      print('loading all experiments')
     #      all_exp = shelf['all']
     #  else:
-    with shelve.open(path.join(args.lab, "experiments")) as shelf:
+    with shelve.open(os.path.join(args.lab, "experiments")) as shelf:
         print(args.rebuild, args.deeprebuild)
         if args.rebuild is True or args.deeprebuild is True or 'all_df' not in shelf:
             # rebuild
@@ -779,63 +786,71 @@ if args.lab:
 else:
     load_experiements(args.results)
 
+if args.save:
+    if not args.lab:
+        print("--save is only available with --lab")
+        exit()
+    if not os.path.exists(os.path.join(args.lab, 'plots')):
+        os.makedirs(os.path.join(args.lab, 'plots'))
+
 print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_ddr_over_delay(drop=i)
+if args.plotall:
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_ddr_over_delay(drop=i)
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    plot_ddr_over_drop(delay=i)
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        plot_ddr_over_drop(delay=i)
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='dpr')
+    # Histograms over delay
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='dpr')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='dupl')
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='dupl')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='udp')
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='udp')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='udpdupl')
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='udpdupl')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='single')
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='single')
 
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_delay(drop=i, var='cmt')
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_delay(drop=i, var='cmt')
 
+    # hist over drop
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='cmt')
+        plot_hist_over_drop(delay=i, var='cmt', drop=(.2, 2, 5, 10))
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='cmt')
-    plot_hist_over_drop(delay=i, var='cmt', drop=(.2, 2, 5, 10))
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='dupl')
+        plot_hist_over_drop(delay=i, var='dupl', drop=(.2, 2, 5, 10))
 
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='single')
+        plot_hist_over_drop(delay=i, var='single', drop=(.2, 2, 5, 10))
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='dupl')
-    plot_hist_over_drop(delay=i, var='dupl', drop=(.2, 2, 5, 10))
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='udp')
+        plot_hist_over_drop(delay=i, var='udp', drop=(.2, 2, 5, 10))
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='single')
-    plot_hist_over_drop(delay=i, var='single', drop=(.2, 2, 5, 10))
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='dpr')
+        plot_hist_over_drop(delay=i, var='dpr', drop=(.2, 2, 5, 10))
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='udp')
-    plot_hist_over_drop(delay=i, var='udp', drop=(.2, 2, 5, 10))
+    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+        #  plot_hist_over_drop(delay=i, var='udpdupl')
+        plot_hist_over_drop(delay=i, var='udpdupl', drop=(.2, 2, 5, 10))
 
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='dpr')
-    plot_hist_over_drop(delay=i, var='dpr', drop=(.2, 2, 5, 10))
-
-for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-    #  plot_hist_over_drop(delay=i, var='udpdupl')
-    plot_hist_over_drop(delay=i, var='udpdupl', drop=(.2, 2, 5, 10))
-
-
-for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-    plot_hist_over_var(drop=i, delay=120)
-    plot_hist_over_var(drop=i, delay=150)
-    plot_hist_over_var(drop=i, delay=80)
+    # histograms on different variations
+    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+        plot_hist_over_var(drop=i, delay=120)
+        plot_hist_over_var(drop=i, delay=150)
+        plot_hist_over_var(drop=i, delay=80)
 
 
 #  plot_hist_over_delay('udp', drop=5)
@@ -854,5 +869,7 @@ for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
 #  plot_hist_over_var(drop=5, delay=40)
 
 embed()
+
+#  plot_delay_over_time(all_exp[6].runs[0])
 
 exit()
