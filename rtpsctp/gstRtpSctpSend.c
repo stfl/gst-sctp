@@ -260,10 +260,10 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
 
       if (variant == PIPELINE_CMT_DUPL) {
-         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx"); */
-         /* gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0"); */
-         gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
-         gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx");
+         gst_util_set_object_arg(G_OBJECT(sink), "pr_value", "0");
+         // gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
+         // gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
       } else if (variant == PIPELINE_CMT_DPR) {
          gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "ttl");
          gst_util_set_object_arg(G_OBJECT(sink), "pr_value", deadline_pr_value->str);
