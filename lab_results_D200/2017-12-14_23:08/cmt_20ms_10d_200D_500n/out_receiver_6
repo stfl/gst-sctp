@@ -1,0 +1,27 @@
+0:00:00.015642698 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:619:gst_sctpsrc_start:<source>[00m SCTP Local addresses: 128.131.89.238, 192.168.0.1
+0:00:01.863211433 [336m15179[00m      0x27828a0 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:798:gst_sctpsrc_create:<source>[00m assoc change received: 1
+warning: Could not decode stream.
+warning: Could not decode stream.
+0:00:23.751146183 [336m15179[00m      0x27828a0 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:790:gst_sctpsrc_create:<source>[00m Shutdown revieved
+0:00:23.751579950 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:635:gst_sctpsrc_stop:<source>[00m Number of packets sent:			5428
+0:00:23.751592250 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:636:gst_sctpsrc_stop:<source>[00m Number of packets received:		5435
+0:00:23.751596353 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:637:gst_sctpsrc_stop:<source>[00m total input DATA chunks			5356
+0:00:23.751599717 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:639:gst_sctpsrc_stop:<source>[00m Received duplicate Data:			0	( 0.0%)
+0:00:23.751605894 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:641:gst_sctpsrc_stop:<source>[00m output ordered chunks			0
+0:00:23.751609363 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:642:gst_sctpsrc_stop:<source>[00m output unordered chunks			0
+0:00:23.751612658 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:643:gst_sctpsrc_stop:<source>[00m output control chunks			5428
+0:00:23.751615821 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:644:gst_sctpsrc_stop:<source>[00m out of the blue				0
+0:00:23.751618978 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:646:gst_sctpsrc_stop:<source>[00m input control chunks			96
+0:00:23.751622210 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:647:gst_sctpsrc_stop:<source>[00m input ordered chunks			0
+0:00:23.751625286 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:648:gst_sctpsrc_stop:<source>[00m input unordered chunks			5356
+0:00:23.751628304 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:650:gst_sctpsrc_stop:<source>[00m total output SACKs			5418
+0:00:23.751631367 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:651:gst_sctpsrc_stop:<source>[00m total input SACKs			0
+0:00:23.751634439 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:653:gst_sctpsrc_stop:<source>[00m ip_output error counter			0
+0:00:23.751637508 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:655:gst_sctpsrc_stop:<source>[00m Packet drop from middle box		0
+0:00:23.751640636 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:656:gst_sctpsrc_stop:<source>[00m P-drop from end host			0
+0:00:23.751643564 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:657:gst_sctpsrc_stop:<source>[00m P-drops with data			0
+0:00:23.751646496 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:659:gst_sctpsrc_stop:<source>[00m data drops due to chunk limit reached	0
+0:00:23.751649541 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:660:gst_sctpsrc_stop:<source>[00m data drops due to rwnd limit reached	0
+0:00:23.751652636 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:661:gst_sctpsrc_stop:<source>[00m max burst doesn't allow sending		10852
+0:00:23.751661577 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:662:gst_sctpsrc_stop:<source>[00m nagle allowed sending			0
+0:00:23.751664791 [336m15179[00m      0x2796c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:663:gst_sctpsrc_stop:<source>[00m nagle doesn't allow sending		0

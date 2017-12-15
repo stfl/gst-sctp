@@ -1,0 +1,45 @@
+0:00:00.015087175 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:619:gst_sctpsrc_start:<source>[00m SCTP Local addresses: 128.131.89.238, 192.168.0.1
+0:00:02.360436631 [336m22631[00m      0x26d48a0 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:798:gst_sctpsrc_create:<source>[00m assoc change received: 1
+warning: Could not decode stream.
+warning: Could not decode stream.
+0:00:26.397961092 [336m22631[00m      0x26d48a0 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:790:gst_sctpsrc_create:<source>[00m Shutdown revieved
+0:00:26.398437602 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:635:gst_sctpsrc_stop:<source>[00m Number of packets sent:			5376
+0:00:26.398466630 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:636:gst_sctpsrc_stop:<source>[00m Number of packets received:		5373
+0:00:26.398470914 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:637:gst_sctpsrc_stop:<source>[00m total input DATA chunks			5269
+0:00:26.398474368 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:639:gst_sctpsrc_stop:<source>[00m Received duplicate Data:			0	( 0.0%)
+0:00:26.398481605 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:641:gst_sctpsrc_stop:<source>[00m output ordered chunks			0
+0:00:26.398485304 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:642:gst_sctpsrc_stop:<source>[00m output unordered chunks			0
+0:00:26.398488684 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:643:gst_sctpsrc_stop:<source>[00m output control chunks			5376
+0:00:26.398491919 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:644:gst_sctpsrc_stop:<source>[00m out of the blue				0
+0:00:26.398495249 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:646:gst_sctpsrc_stop:<source>[00m input control chunks			126
+0:00:26.398498770 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:647:gst_sctpsrc_stop:<source>[00m input ordered chunks			0
+0:00:26.398502012 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:648:gst_sctpsrc_stop:<source>[00m input unordered chunks			5269
+0:00:26.398505162 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:650:gst_sctpsrc_stop:<source>[00m total output SACKs			5366
+0:00:26.398508268 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:651:gst_sctpsrc_stop:<source>[00m total input SACKs			0
+0:00:26.398511556 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:653:gst_sctpsrc_stop:<source>[00m ip_output error counter			0
+0:00:26.398514850 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:655:gst_sctpsrc_stop:<source>[00m Packet drop from middle box		0
+0:00:26.398518058 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:656:gst_sctpsrc_stop:<source>[00m P-drop from end host			0
+0:00:26.398521428 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:657:gst_sctpsrc_stop:<source>[00m P-drops with data			0
+0:00:26.398524480 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:659:gst_sctpsrc_stop:<source>[00m data drops due to chunk limit reached	0
+0:00:26.398527631 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:660:gst_sctpsrc_stop:<source>[00m data drops due to rwnd limit reached	0
+0:00:26.398530881 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:661:gst_sctpsrc_stop:<source>[00m max burst doesn't allow sending		10748
+0:00:26.398538918 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:662:gst_sctpsrc_stop:<source>[00m nagle allowed sending			0
+0:00:26.398542423 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;31;43m             sctpsrc gstsctpsrc.c:663:gst_sctpsrc_stop:<source>[00m nagle doesn't allow sending		0
+0:00:27.513486756 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:467:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Jitterbuffer stats:
+0:00:27.513506024 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:468:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Average Jitter:		0.000
+0:00:27.513516173 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:469:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num Pushed:		811
+0:00:27.513520836 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:470:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num Lost:		422
+0:00:27.513524673 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:471:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num Late:		186
+0:00:27.513538581 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:472:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num Duplicate:		0
+0:00:27.513542683 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:473:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num Old Dropped:	218
+
+0:00:27.513546865 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:475:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m Num All Duplicate:		2352
+0:00:27.513551084 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:476:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m IN: Num Deadline Missed:	278
+0:00:27.513554879 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:477:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m IN: Num Deadline Hit:	4990
+0:00:27.513558721 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:478:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m IN: Average TTD (hit):	68.00ms
+0:00:27.513564219 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:479:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m IN: Average TTD:	90.27ms
+
+0:00:27.513568649 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:481:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m OUT: Num Deadline Missed:	256
+0:00:27.513572508 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:482:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m OUT: Num Deadline Hit:	555
+0:00:27.513576219 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:483:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m OUT: Average TTD (hit):	155.26ms
+0:00:27.513580810 [336m22631[00m      0x26e8c30 [36mINFO   [00m [00;01;37;43m         rtpsctprecv gstRtpSctpReceive.c:484:gst_RtpSctpReceiver_handle_ready_to_null:<pipeline>[00m OUT: Average TTD (pushed):	180.88ms
