@@ -38,6 +38,7 @@ GST_DEBUG_CATEGORY_STATIC (rtpsctpsend);
 #define GST_CAT_DEFAULT rtpsctpsend
 
 #define GST_FRAME_COUNT_DEFAULT "10"
+#define FRAMERATE 		24
 
 typedef struct __GstRtpSctpSender _GstRtpSctpSender;
 struct __GstRtpSctpSender
@@ -209,7 +210,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
          "format",     G_TYPE_STRING,      "RGBA",
          "width",      G_TYPE_INT,         60,
          "height",     G_TYPE_INT,         60,
-         "framerate",  GST_TYPE_FRACTION,  24,  1,
+         "framerate",  GST_TYPE_FRACTION,  FRAMERATE,  1,
          NULL);
 
    GstElement *timeoverlay = gst_element_factory_make("timeoverlay", "timeoverlay");
@@ -258,7 +259,8 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
       }
 
       GString *deadline_pr_value = g_string_new("");
-      g_string_printf(deadline_pr_value, "%u", (uint32_t) ((atoi(deadline) - atoi(path_delay)) / 1000));
+      g_string_printf(deadline_pr_value, "%u", (uint32_t) (((atoi(deadline) - atoi(path_delay)) / 1000)
+                                  - (1000/(double)FRAMERATE)));
 
       if (variant == PIPELINE_CMT_DUPL) {
          gst_util_set_object_arg(G_OBJECT(sink), "pr_policy", "rtx");
