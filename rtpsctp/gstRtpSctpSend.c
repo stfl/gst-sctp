@@ -221,6 +221,7 @@ gst_RtpSctpSender_create_pipeline (_GstRtpSctpSender * RtpSctpSender)
    GstElement *rtppay = gst_element_factory_make("rtpvrawpay", "rtppay");
    gst_util_set_object_arg(G_OBJECT(rtppay), "mtu", "1400");
    gst_util_set_object_arg(G_OBJECT(rtppay), "perfect-rtptime",  "true");
+   gst_util_set_object_arg(G_OBJECT(rtppay), "chunks-per-frame",  "1");
    gst_util_set_object_arg(G_OBJECT(rtppay), "seqnum-offset",  "0");
    gst_util_set_object_arg(G_OBJECT(rtppay), "timestamp-offset", timestamp_offset);
 

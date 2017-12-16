@@ -34,7 +34,7 @@ TRAPINT() {
    ssh root@${ip_sender} "tc qdisc replace dev $phy2 root netem loss 0% delay 0ms"
    ${=receiver_root} tc qdisc replace dev $phy1 root netem loss 0% delay 0ms
    ${=receiver_root} tc qdisc replace dev $phy2 root netem loss 0% delay 0ms
-   exit
+   exit 1
 }
 
 # TRAPEXIT() {
@@ -342,5 +342,5 @@ fi
 [[ ! ${+verbose[1]} ]] && set +x
 rmdir .receiver_running.lok 2>/dev/null
 rmdir .receiver_start.lok 2>/dev/null
-exit
+exit 0
 

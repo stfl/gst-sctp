@@ -628,10 +628,10 @@ gst_sctpsink_start (GstBaseSink * sink)
 
    usrsctp_sysctl_set_sctp_blackhole(2);
    usrsctp_sysctl_set_sctp_heartbeat_interval_default(5000); // (30000ms)
-   usrsctp_sysctl_set_sctp_delayed_sack_time_default(30);   // 200 mimize sack delay */
+   usrsctp_sysctl_set_sctp_delayed_sack_time_default(10);   // 200 mimize sack delay */
    if (sctpsink->nr_sack)
       usrsctp_sysctl_set_sctp_nrsack_enable(1);                /* non-renegable SACKs */
-   usrsctp_sysctl_set_sctp_ecn_enable(1);                   /* sctp_ecn_enable > default enabled */
+   usrsctp_sysctl_set_sctp_ecn_enable(0);                   /* sctp_ecn_enable > default enabled */
    usrsctp_sysctl_set_sctp_enable_sack_immediately(1);      // Enable I-Flag
    /* sctp_path_pf_threshold */ /* TODO leave potentially failed state disabled for now */
 
