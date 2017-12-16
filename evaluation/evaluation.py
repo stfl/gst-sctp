@@ -29,8 +29,10 @@ matplotlib.style.use('ggplot')
 
 # config
 fps = 24
-init_offset = 12  # frames = 0.5 s
+init_offset = 24  # frames = 0.5 s
 num_packets_per_frame = 11
+payload_length = 1400  # RTP header is included in the TRO metric
+drop_correlation = .25
 cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
 
@@ -52,9 +54,9 @@ class Experiment:
         if self.num_runs > 0:
             self.trace = pd.concat([r.trace for r in self.runs])
 
-            assert len(self.trace) + self.lost == self.packets_sent
+            assert len(self.trace) + self.lost == self.packets_sent_stream
         #  self.all_ttd_jb = np.concatenate([r.trace_out['ttd'] for r in self.runs])
-        #  assert len(self.all_ttd_jb) + self.lost == self.packets_sent
+        #  assert len(self.all_ttd_jb) + self.lost == self.packets_sent_stream
 
     def __collect_runs(self):
         with open(os.path.join(self.run_path, "run_config")) as run_config_file:
@@ -74,9 +76,9 @@ class Experiment:
 
         for run_id in range(1, self.num_runs+1):
             try:
-                self.runs.append(Run(self.run_path, run_id, self.results_dir, self.variant))
+                self.runs.append(Run(self.run_path, run_id, self.results_dir, self.variant, self.drop_rate, self.delay))
             except (InvalidValue, ReceiverKilled):
-                print("Ignoring this run")
+                #  print("Ignoring this run")
                 self.num_runs -= 1
                 continue
         assert len(self.runs) == self.num_runs
@@ -88,15 +90,19 @@ class Experiment:
     #  def cdf_in(self, variant):
     @property
     def ddr(self):
-        return float(self.deadline_hit / self.packets_sent)
+        return float(self.deadline_hit / self.packets_sent_stream)
 
     @property
-    def packets_sent(self):
-        return sum(r.packets_sent for r in self.runs)
+    def packets_sent_stream(self):
+        return sum(r.packets_sent_stream for r in self.runs)
 
     @property
-    def packets_sent_unmasked(self):
-        return sum(r.packets_sent_unmasked for r in self.runs)
+    def packets_sent_stream_unmasked(self):
+        return sum(r.packets_sent_stream_unmasked for r in self.runs)
+
+    @property
+    def packets_sent_link(self):
+        return sum(r.packets_sent_link for r in self.runs)
 
     @property
     def deadline_hit(self):
@@ -147,7 +153,20 @@ class Experiment:
 
     @property
     def tro(self):
-        return (self.duplicates_unmasked + self.packets_sent_unmasked) / float(self.packets_sent_unmasked) - 1
+        return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
+
+    @property
+    def tro_bytes(self):
+        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation) * self.drop_rate / 100)
+        return (bytes_sent_full / self.bytes_sent_stream) - 1
+
+    @property
+    def bytes_sent_link(self):
+        return sum(r.bytes_sent_link for r in self.runs)
+
+    @property
+    def bytes_sent_stream(self):
+        return sum(r.bytes_sent_stream for r in self.runs)
 
     @property
     def sender_buffer_blocked(self):
@@ -159,57 +178,54 @@ class Experiment:
 
     def __str__(self):
         q1, q2 = self.ttd_quantile([.8, .95]) / 1000000
-        exp_str = ("Variant:{variant} delay:{delay}ms droprate:{drop:.1f}% D:{deadline}ms frames:{frames} {runs}runs\n"
+        exp_str = ("Variant:{variant} delay:{delay}ms drop:{drop:.1f}%({drop_full:.1f}%) D:{deadline}ms frames:{frames} {runs}runs\n"
                    "sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
                    "TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
-                   "dupl:{dupl:5d} TRO:{tro:.2%} snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
+                   "link:{link:6d} dupl:{dupl:5d} TRO:{tro_bytes:.2%} s_blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
+                   #  "rtx:{rtx}, abnd:{abandoned}\n"
                    .format(delay=self.delay,
                            deadline=self.deadline,
                            drop=self.drop_rate,
+                           drop_full=self.drop_rate * (1 + drop_correlation),
                            variant=self.variant,
                            runs=self.num_runs,
                            frames=self.results_dir.num_frames,
                            ddr=self.ddr,
-                           sent=self.packets_sent,
+                           sent=self.packets_sent_stream,
                            hit=self.deadline_hit,
                            miss=self.deadline_miss,
                            lost=self.lost,
+                           link=self.packets_sent_link,
                            ml=self.deadline_miss + self.lost,
                            dupl=self.duplicates_unmasked,
                            tro=self.tro,
+                           tro_bytes=self.tro_bytes,
                            mean=self.ttd_mean/1000000,
                            std=self.ttd_std/1000000,
                            max=self.ttd_max/1000000,
                            q1=q1, q2=q2,
                            send_block=self.sender_buffer_blocked,
                            s1=self.sender_tx[0]/1000,
-                           s2=self.sender_tx[1]/1000))
-        #  ddr_str = ("sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
-                   #  .format(ddr=self.ddr, sent=self.packets_sent, hit=self.deadline_hit,
-                   #          miss=self.deadline_miss + self.lost, dupl=self.duplicates_unmasked,
-                   #          tro=self.tro))
-        #  ttd_str = ("TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
-                   #  .format(mean=self.ttd_mean/1000000,
-                   #          std=self.ttd_std/1000000,
-                   #          max=self.ttd_max/1000000,
-                   #          q1=q1, q2=q2))
-        #  other_str = ('dupl:{dupl:5d} TRO:{tro:.2%} snd blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n'
-                     #  .format(send_block=self.sender_buffer_blocked,
-                     #          s1=self.sender_tx[0]/1000, s2=self.sender_tx[1]/1000))
+                           s2=self.sender_tx[1]/1000
+                           #  abandoned=self.abandoned if self.variant not in ('udp', 'udpdupl') else 0,
+                           #  rtx=self.sender_rtx_data if self.variant not in ('udp', 'udpdupl') else 0
+                           ))
 
-        return exp_str #+ ddr_str + ttd_str + other_str
+        return exp_str
 
 
 class Run():
     '''A Run is a single run with a defined number of frames transfered through gstreamer'''
-    def __init__(self, run_path, run_id, results_dir, variant):
+    def __init__(self, run_path, run_id, results_dir, variant, drop_rate, delay):
         self.run_path = run_path
         self.run_id = run_id
         self.variant = variant
+        self.drop_rate = drop_rate
+        self.delay = delay
         self.results_dir = results_dir
         self.duplicates_unmasked = 0
-        self.packets_sent_unmasked = self.results_dir.num_frames * num_packets_per_frame
-        self.packets_sent = self.packets_sent_unmasked - cutoff_init - cutoff_end
+        self.packets_sent_stream_unmasked = self.results_dir.num_frames * num_packets_per_frame
+        self.packets_sent_stream = self.packets_sent_stream_unmasked - cutoff_init - cutoff_end
         self.receiver_killed = os.path.isfile(os.path.join(self.run_path, 'receiver_killed_' + str(self.run_id)))
         if self.receiver_killed:
             print('receiver killed')
@@ -225,21 +241,21 @@ class Run():
         #  self.trace_jb = np.genfromtxt(self.file_experiment_trace_out, names=True, delimiter=';', dtype=int)
         self.trace = pd.read_csv(file_experiment_trace_in, delimiter=';')
         if len(self.trace) < cutoff_init:
-            print("trace too short")
+            print("trace too short %d" % len(self.trace))
             raise InvalidValue
-        self.trace_all = self.trace
+        trace_all = self.trace
 
         self.trace = self.trace.drop_duplicates('seqnum')  # keeps the first, by index! (which is the lower "now")
-        self.duplicates_unmasked = len(self.trace_all) - len(self.trace)
+        self.duplicates_unmasked = len(trace_all) - len(self.trace)
 
         # cut off init phase and end phase
-        self.trace = self.trace[(self.trace.seqnum >= cutoff_init) & (self.trace.seqnum < (self.packets_sent_unmasked - cutoff_end))]
+        self.trace = self.trace[(self.trace.seqnum >= cutoff_init) & (self.trace.seqnum < (self.packets_sent_stream_unmasked - cutoff_end))]
         self.trace['ttd'] = self.trace.now - self.trace.rtptime
         self.start_time = min(self.trace['rtptime'])
         #  self.trace_jb = self.trace_jb[cutoff_mask_jb]
 
         if min(self.trace.ttd) <= 0:
-            print("negative ttd in ", file_experiment_trace_in)
+            print("negative ttd ", min(self.trace.ttd), " in ", file_experiment_trace_in)
             #  fig, ax = plt.subplots()
             #  df = pd.DataFrame(self.trace, columns=['rtptime', 'now']) / 1000000
             #  df.plot(sharey=True, ax=ax)
@@ -250,20 +266,21 @@ class Run():
             #  plt.show()
 
             #  raise InvalidValue
+        # TODO
         #  assert min(self.trace.ttd) > 0
 
         # calc DDR
         self.deadline_hit = len(self.trace.query('now < deadline'))
-        self.lost = self.packets_sent - len(self.trace)
+        self.lost = self.packets_sent_stream - len(self.trace)
         self.deadline_miss = len(self.trace) - self.deadline_hit
-        self.ddr = float(self.deadline_hit / self.packets_sent)
+        self.ddr = float(self.deadline_hit / self.packets_sent_stream)
 
         with open(os.path.join(self.run_path, "out_sender_" + str(self.run_id))) as out_sender_file:
             out_sender = out_sender_file.read()
             self.sender_buffer_blocked = len(re.findall(r"usrsctp_sendv failed:", out_sender))
-            if self.sender_buffer_blocked > self.packets_sent_unmasked * 0.2:
+            if self.sender_buffer_blocked > self.packets_sent_stream_unmasked * 0.2:
                 # ignore if more than 20% are sender buffer blocked
-                print('too much sender buffer blocking')
+                print('too much sender buffer blocking %d/%d' % (self.sender_buffer_blocked, self.packets_sent_stream_unmasked))
                 raise InvalidValue
 
         self.__calc_transfered_bytes()
@@ -273,8 +290,26 @@ class Run():
                       .format(self.sender_tx[0]/1000, self.sender_tx[1]/1000, abs(self.sender_tx[0] - self.sender_tx[1])/1000))
                 raise InvalidValue
 
-        if (self.variant not in ['udp', 'udpdupl']):
+        self.bytes_sent_stream = self.packets_sent_stream_unmasked * payload_length
+        self.bytes_sent_link = sum(self.sender_tx) + sum(self.receiver_tx)
+
+        #  print("sender tx: %d %d\t rx: %d %d" % (self.sender_tx[0], self.sender_tx[1], self.sender_rx[0], self.sender_rx[1]))
+        #  print("receiv rx: %d %d\t tx: %d %d" % (self.receiver_rx[0], self.receiver_rx[1], self.receiver_tx[0], self.receiver_tx[1]))
+
+        if self.variant == 'udp':
+            self.packets_sent_link = self.packets_sent_stream_unmasked
+        elif self.variant == 'udpdupl':
+            self.packets_sent_link = self.packets_sent_stream_unmasked * 2
+        else:
             self.__read_usrsctp_stats()
+            #  print(self.bytes_sent_stream, self.bytes_sent_link, (self.bytes_sent_link * (self.drop_rate / 100 + 1) / self.bytes_sent_stream) - 1, self.abandoned, self.sender_rtx_data)
+
+        #  if self.tro < 0:
+        #      print("negative tro stream %d, link %d, blk %d (%.2f) abandoned %d" %
+        #            (self.packets_sent_stream_unmasked, self.packets_sent_link,
+        #             self.sender_buffer_blocked, self.tro, self.abandoned))
+            #  raise InvalidValue
+            #  import ipdb; ipdb.set_trace()
 
     def __read_usrsctp_stats(self):
         with open(os.path.join(self.run_path, "usrsctp_stats_receiver_" + str(self.run_id))) as usrsctp_stats_receiver_file:
@@ -318,7 +353,7 @@ class Run():
 
             match = re.search(r"send_data=(\d+)", usrsctp_stats_sender)
             assert match is not None
-            self.sender_recv_data = int(match[1]) - 1  # the first one is a dummy
+            self.sender_send_data = int(match[1]) - 1  # the first one is a dummy
 
             match = re.search(r"send_sacks=(\d+)", usrsctp_stats_sender)
             assert match is not None
@@ -328,13 +363,32 @@ class Run():
             assert match is not None
             self.sender_recv_sacks = int(match[1])
 
-            #  send_retrans_data=4
-            #  send_fast_retrans=4
+            match = re.search(r"send_retrans_data=(\d+)", usrsctp_stats_sender)
+            assert match is not None
+            self.sender_rtx_data = int(match[1])
+
+            #  match = re.search(r"send_fast_retrans=(\d+)", usrsctp_stats_sender)
+            #  assert match is not None
+            #  self.sender_frtx = int(match[1])
+
+            self.packets_sent_link = self.sender_send_data + self.sender_rtx_data
+
             #  timer_dpr_fired=189
             #  dpr_avg_delay_timer=45552
             #  dpr_flagged=0
-            #  abandoned_sent=0
-            #  abandoned_unsent=0
+
+            match = re.search(r"abandoned_sent=(\d+)", usrsctp_stats_sender)
+            assert match is not None
+            sender_abandoned_sent = int(match[1])
+
+            match = re.search(r"abandoned_unsent=(\d+)", usrsctp_stats_sender)
+            assert match is not None
+            sender_abandoned_unsent = int(match[1])
+            self.abandoned = sender_abandoned_sent + sender_abandoned_unsent
+
+            if self.variant != 'dupl' and self.abandoned > 0.5 * self.packets_sent_stream_unmasked:
+                print("too many abandoned %d/%d" % (self.abandoned, self.packets_sent_stream_unmasked))
+                raise InvalidValue
 
     def __calc_transfered_bytes(self):
         with open(os.path.join(self.run_path, "sender_transfered_bytes_" + str(self.run_id))) as sender_tr_file:
@@ -375,48 +429,6 @@ class Run():
             assert match is not None
             self.receiver_rx.append(int(match[1]))
 
-        #  pre = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_pre_' + str(self.run_id)))
-        #  post = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy1 + '_rx_bytes_post_' + str(self.run_id)))
-        #  self.receiver_rx = [int(post.read()) - int(pre.read())]
-        #  pre.close()
-        #  post.close()
-        #
-        #  pre = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_pre_' + str(self.run_id)))
-        #  post = open(os.path.join(self.run_path, 'receiver_' + self.results_dir.phy2 + '_rx_bytes_post_' + str(self.run_id)))
-        #  self.receiver_rx.append(int(post.read()) - int(pre.read()))
-        #  pre.close()
-        #  post.close()
-        #
-        #  # TODO for tx bytes
-        #
-        #  pre = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_pre_' + str(self.run_id)))
-        #  post = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy1 + '_tx_bytes_post_' + str(self.run_id)))
-        #  embed()
-        #  self.sender_tx = [int(re.match(r'(\d*)', post.read())[1]) - int(re.match(r'\d*', pre.read()))]
-        #  pre.close()
-        #  post.close()
-        #
-        #  pre = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_pre_' + str(self.run_id)))
-        #  post = open(os.path.join(self.run_path, 'sender_' + self.results_dir.phy2 + '_tx_bytes_post_' + str(self.run_id)))
-        #  self.sender_tx.append(int(post.read()) - int(pre.read()))
-        #  pre.close()
-        #  post.close()
-        #
-        #  print(self.sender_tx, self.receiver_rx)
-
-        # TODO for Sender
-
-    #  def __gen_duplicates_mask(self):
-    #      '''generate the mask that assigns stores False on the possition of all sequence numbers'''
-    #      duplicates_mask = [True]  # the first one cannot be a dupl
-    #      for i in range(1, len(self.trace)):
-    #          if self.trace['seqnum'][i] in self.trace['seqnum'][:i-1]:
-    #              duplicates_mask.append(False)
-    #              self.duplicates_unmasked += 1
-    #          else:
-    #              duplicates_mask.append(True)
-    #      return duplicates_mask
-
     @property
     def duplicates(self):
         return self.duplicates_unmasked
@@ -439,7 +451,12 @@ class Run():
 
     @property
     def tro(self):
-        return (self.duplicates_unmasked + self.packets_sent_unmasked) / float(self.packets_sent_unmasked) - 1
+        return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
+
+    @property
+    def tro_bytes(self):
+        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation) * self.drop_rate / 100)
+        return (bytes_sent_full / self.bytes_sent_stream) - 1
 
     #  @property
     #  def ttd_max_jb(self):
@@ -468,7 +485,10 @@ class Run():
 
     def delay_over_time(self):
         '''returns the ttd over time t, starting with 0 at the first sending of a packet'''
-        return (self.trace['now'] - self.start_time), self.trace['ttd']
+        tmp = self.trace[['now', 'ttd']]
+        tmp['now'] = (tmp['now'] - self.start_time)/1000000000
+        tmp['ttd'] = tmp['ttd']/1000000
+        return tmp
 
     #  def delay_over_time_jb(self):
     #      return (self.trace_jb['now'] - self.start_time), self.trace_jb['ttd']
@@ -553,9 +573,24 @@ class ResultsDir():
             #  num_runs = min(2, num_runs)  # TODO force only 2
 
 
-def plot_delay_over_time(run):
-    t, ttd = run.delay_over_time()
-    plt.plot(t / 1000000000, ttd / 1000000, 'r.')
+def plot_delay_over_time(run, delay):
+    ttd = run.delay_over_time()
+    fig, ax = plt.subplots()
+    ttd.plot(x='now', y='ttd', label=run.variant, legend=True,
+             marker='.', linestyle='', markersize=.5,
+             ax=ax, sharey=ax, sharex=ax)
+    plt.title('TTD over time at delay {}ms'.format(delay))
+    ax.set_ylabel('TTD [ms]')
+    ax.set_xlabel('Time [s]')
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/ttd_time_%s_%03dms_%0d.png' %
+                                 (run.variant, delay, run.run_id))
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
+    else:
+        plt.show()
+    plt.show()
 
 
 def plot_hist(exp):
@@ -580,12 +615,12 @@ def plot_hist(exp):
 def plot_hist_over_drop(var, delay, drop=all):
     global all_exp
     plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay and (drop == all or e.drop_rate in drop)],
-                    label="str(e.drop_rate)+'%'", title='TTD at different Packet Drop Rates %s %dms' % (var, delay))
+                    label="str(e.drop_rate * (1 + drop_correlation))+'%'", title='TTD at different Packet Drop Rates %s %dms' % (var, delay))
 
 
-def plot_hist_over_delay(var, drop):
+def plot_hist_over_delay(var, drop, delay=all):
     global all_exp
-    plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop)],
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop) and (delay == all or e.delay in delay)],
                     label="str(e.delay)+'ms'", title='TTD at different Link Delays {} {:.1f}%'.format(var, drop))
 
 
@@ -600,8 +635,13 @@ def plot_hist_multi(exps, label, title):
         print("Empty experiments list")
         return
 
-    colors = iter(plot_colors)
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/', title.lower().replace(" ", '_').replace('%', '') + ".png")
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
 
+    colors = iter(plot_colors)
     fig, ax = plt.subplots()
     for e in exps:
         c = next(colors)
@@ -635,7 +675,6 @@ def plot_hist_multi(exps, label, title):
     plt.xlim((0, exps[0].deadline * 4 / 3))
 
     if args.save:
-        save_file = os.path.join(args.lab, 'plots/', title.lower().replace(" ", '_').replace('%', '') + ".png")
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -644,22 +683,28 @@ def plot_hist_multi(exps, label, title):
 
 
 def plot_ddr_over_drop(delay):
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/ddr_over_drop_at_delay_%03dms.png' % delay)
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
+
     colors = iter(plot_colors)
     fig, ax = plt.subplots()
     global all_df
 
     all_df_grouped = all_df[all_df.delay == delay].sort_values('drop').groupby('variant', sort=False)
     for t, gr in all_df_grouped:
+        gr['drop'] = gr['drop'] * (1 + drop_correlation)
         gr.plot(y='ddr', x='drop',
-                label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                #  label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                label=t,
                 ax=ax, sharex=ax, sharey=ax, color=next(colors))
     plt.title('DDR at different Duplication Variants for Delay {}ms'.format(delay))
     # TODO add as text
-    ax.set_ylabel('DDR [%]')
+    ax.set_ylabel('DDR')
     ax.set_xlabel('Packet Drop Rate on the link [%]')
     if args.save:
-        save_file = os.path.join(args.lab, 'plots/ddr_over_drop_at_delay_%03dms.png' % delay)
-        #  save_file = './plots/ddr_over_drop_at_delay_%03dms.png' % delay
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -668,6 +713,12 @@ def plot_ddr_over_drop(delay):
 
 
 def plot_ddr_over_delay(drop):
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop))
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
+
     colors = iter(plot_colors)
     # TODO sort colors
     fig, ax = plt.subplots()
@@ -675,15 +726,74 @@ def plot_ddr_over_delay(drop):
     all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values('delay').groupby('variant', sort=False)
     for t, gr in all_df_grouped:
         gr.plot(y='ddr', x='delay',
-                label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                #  label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                label=t,
                 ax=ax, sharex=ax, sharey=ax, color=next(colors))
     plt.title('DDR at different Duplication Variants for Drop Rate {:.1f}%'.format(float(drop)))
 
-    ax.set_ylabel('DDR [%]')
-    ax.set_xlabel('Delay on the link [%]')
+    ax.set_ylabel('DDR')
+    ax.set_xlabel('Delay on the link [ms]')
     if args.save:
-        save_file = os.path.join(args.lab, 'plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop))
-        #  save_file = './plots/ddr_over_delay_at_drop_%04.1f.png' % float(drop)
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
+    else:
+        plt.show()
+
+
+def plot_tro_over_drop(delay):
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/tro_over_drop_at_delay_%03dms.png' % delay)
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
+
+    colors = iter(plot_colors)
+    fig, ax = plt.subplots()
+    global all_df
+
+    all_df_grouped = all_df[all_df.delay == delay].sort_values('drop').groupby('variant', sort=False)
+    for t, gr in all_df_grouped:
+        gr['drop'] = gr['drop'] * (1 + drop_correlation)
+        gr.plot(y='tro', x='drop',
+                #  label="UDPDupl" if t == 'udpdupl' else t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                label=t,
+                ax=ax, sharex=ax, sharey=ax, color=next(colors))
+    plt.title('TRO at different Duplication Variants for Delay {}ms'.format(delay))
+    # TODO add as text
+    ax.set_ylabel('TRO')
+    ax.set_xlabel('Packet Drop Rate on the link [%]')
+
+    if args.save:
+        fig.savefig(save_file)
+        plt.close()
+        print("saved", save_file)
+    else:
+        plt.show()
+
+
+def plot_tro_over_delay(drop):
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/tro_over_delay_at_drop_%04.1f.png' % float(drop))
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
+
+    colors = iter(plot_colors)
+    # TODO sort colors
+    fig, ax = plt.subplots()
+
+    all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values('delay').groupby('variant', sort=False)
+    for t, gr in all_df_grouped:
+        gr.plot(y='tro', x='delay',
+                #  label=t.capitalize() if t in ['dupl', 'single'] else t.upper(),
+                label=t,
+                ax=ax, sharex=ax, sharey=ax, color=next(colors))
+    plt.title('TRO at different Duplication Variants for Drop Rate {:.1f}%'.format(float(drop)))
+
+    ax.set_ylabel('TRO')
+    ax.set_xlabel('Delay on the link [ms]')
+    if args.save:
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -729,14 +839,15 @@ def load_experiements(load_dirs, shelf=False):
                                         'runs': exp.num_runs,
                                         'frames': exp.num_frames,
                                         'deadline': exp.deadline,
-                                        'tro': exp.tro,
-                                        'ttd_mean': exp.ttd_mean}, ignore_index=True)
-                #  print(exp)
+                                        'tro': exp.tro_bytes,
+                                        'ttd_mean': exp.ttd_mean},
+                                       ignore_index=True)
+                print(exp)
             else:
-                print('ignoring this empty experiment', run_dir, '\n')
+                print('ignoring this empty experiment', run_dir)
             #  exp_id += 1
         if shelf_opend:
-            self.close()
+            shelf.close()
 
 
 ########
@@ -795,78 +906,80 @@ if args.save:
 
 print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 
+
 if args.plotall:
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_ddr_over_delay(drop=i)
+    if args.pathfailure:
+        for e in all_exp:
+            for r in e.runs:
+                plot_delay_over_time(r, e.delay)
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        plot_ddr_over_drop(delay=i)
+        plot_ddr_over_delay(drop=0.)
 
-    # Histograms over delay
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='dpr')
+        for i in (20, 40, 60, 80, 100, 120, 150):
+            plot_hist_over_var(drop=0., delay=i)
 
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='dupl')
+    else:
+        # DDR
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_ddr_over_delay(drop=i)
 
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='udp')
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_ddr_over_drop(delay=i)
 
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='udpdupl')
+        # TRO
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_tro_over_delay(drop=i)
 
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='single')
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_tro_over_drop(delay=i)
 
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_delay(drop=i, var='cmt')
+        # Histograms over delay
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='dpr')
 
-    # hist over drop
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='cmt')
-        plot_hist_over_drop(delay=i, var='cmt', drop=(.2, 2, 5, 10))
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='dupl')
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='dupl')
-        plot_hist_over_drop(delay=i, var='dupl', drop=(.2, 2, 5, 10))
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='udp')
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='single')
-        plot_hist_over_drop(delay=i, var='single', drop=(.2, 2, 5, 10))
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='udpdupl')
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='udp')
-        plot_hist_over_drop(delay=i, var='udp', drop=(.2, 2, 5, 10))
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='single')
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='dpr')
-        plot_hist_over_drop(delay=i, var='dpr', drop=(.2, 2, 5, 10))
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_delay(drop=i, var='cmt')
 
-    for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-        #  plot_hist_over_drop(delay=i, var='udpdupl')
-        plot_hist_over_drop(delay=i, var='udpdupl', drop=(.2, 2, 5, 10))
+        # hist over drop
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='cmt', drop=(.2, 2, 5, 10))
 
-    # histograms on different variations
-    for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
-        plot_hist_over_var(drop=i, delay=120)
-        plot_hist_over_var(drop=i, delay=150)
-        plot_hist_over_var(drop=i, delay=80)
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='dupl', drop=(.2, 2, 5, 10))
 
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='single', drop=(.2, 2, 5, 10))
 
-#  plot_hist_over_delay('udp', drop=5)
-#  plot_hist_over_drop('udp', delay=20, drop=(.5, 2, 5, 10))
-#  plot_hist_over_drop('dpr', 60)
-#  plot_hist_over_drop('single', 60)
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='udp', drop=(.2, 2, 5, 10))
 
-#  plot_hist_over_drop('udp', 60)
-#  plot_hist_over_drop('dupl', 60)
-#  plot_hist_over_var(60, 10)
-#  plot_ddr_over_drop(delay=40)
-#  plot_ddr_over_delay(drop=8)
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='dpr', drop=(.2, 2, 5, 10))
 
-#  plot_hist_over_drop('udp', delay=30)
-#  plot_hist_over_drop('udpdupl', delay=40)
-#  plot_hist_over_var(drop=5, delay=40)
+        for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
+            plot_hist_over_drop(delay=i, var='udpdupl', drop=(.2, 2, 5, 10))
+
+        # histograms on different variations
+        for i in (0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
+            plot_hist_over_var(drop=i, delay=120)
+            plot_hist_over_var(drop=i, delay=150)
+            plot_hist_over_var(drop=i, delay=80)
+
+#  plot_hist_over_drop(var='dpr', delay=40)
+plot_delay_over_time(delay=40, run=all_exp[0].runs[0])
+
 
 embed()
 
