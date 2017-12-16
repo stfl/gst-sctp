@@ -621,13 +621,13 @@ def plot_hist_over_drop(var, delay, drop=all):
 def plot_hist_over_delay(var, drop, delay=all):
     global all_exp
     plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop) and (delay == all or e.delay in delay)],
-                    label="str(e.delay)+'ms'", title='TTD at different Link Delays {} {:.1f}%'.format(var, drop))
+                    label="str(e.delay)+'ms'", title='TTD at different Link Delays {} {:.1f}%'.format(var, drop * (1 + drop_correlation)))
 
 
 def plot_hist_over_var(delay, drop):
     global all_exp
     plot_hist_multi([e for e in all_exp if e.drop_rate == float(drop) and e.delay == delay],
-                    label="str(e.variant)", title='TTD at different Duplication Variants %dms %.1f%%' % (delay, drop))
+                    label="str(e.variant)", title='TTD at different Duplication Variants %dms %.1f%%' % (delay, drop * (1 + drop_correlation)))
 
 
 def plot_hist_multi(exps, label, title):
@@ -977,11 +977,15 @@ if args.plotall:
             plot_hist_over_var(drop=i, delay=150)
             plot_hist_over_var(drop=i, delay=80)
 
-#  plot_hist_over_drop(var='dpr', delay=40)
-plot_delay_over_time(delay=40, run=all_exp[0].runs[0])
+plot_hist_over_delay(var='dpr', drop=5.)
+plot_hist_over_delay(var='cmt', drop=5.)
+plot_hist_over_delay(var='dpr', drop=10.)
+plot_hist_over_delay(var='cmt', drop=10.)
+plot_hist_over_delay(var='dupl', drop=10.)
+#plot_delay_over_time(delay=40, run=all_exp[0].runs[0])
 
 
-embed()
+#embed()
 
 #  plot_delay_over_time(all_exp[6].runs[0])
 

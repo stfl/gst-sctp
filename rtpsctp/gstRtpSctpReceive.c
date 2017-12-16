@@ -272,7 +272,7 @@ gst_RtpSctpReceiver_create_pipeline (GstRtpSctpReceiver * RtpSctpReceiver)
          "max-misorder-time",  50,  // ms
          NULL);
 
-   gst_util_set_object_arg(G_OBJECT(jitterbuffer), "mode",  "slave");
+   gst_util_set_object_arg(G_OBJECT(jitterbuffer), "mode",  "synced");
 
    if (variant == PIPELINE_CMT_DPR) {
       GString *jbuf_latency = g_string_new("");
