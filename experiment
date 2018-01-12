@@ -48,7 +48,7 @@ if (( ${+verbose[1]} )); then
 fi
 
 if (( ${+debug[1]} )); then
-     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:5,rtpvrawpay:4,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:3"
+     DEBUG_SENDER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,structure:3,basesink:3,rtpsctpsend:6,rtpbasepayload:3,rtpvrawpay:4,sctpsink:6,sctputils:4,usrsctpsnd:8,multiudpsink:3"
      # DEBUG_SENDER="2"
    DEBUG_RECEIVER="3,GST_REGISTRY:3,task:3,gstutils:5,GST_STATES:2,basesrc:3,pushsrc:3,rtpbasedepayload:3,rtpjitterbuffer:3,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:3"
    # DEBUG_RECEIVER="4,GST_REGISTRY:4,task:4,gstutils:5,GST_STATES:3,basesrc:4,pushsrc:5,rtpbasedepayload:5,rtpjitterbuffer:4,rtpsctprecv:5,sctpsrc:5,sctputils:4,usrsctprecv:8,udpsrc:5,rtpmux:5"

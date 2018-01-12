@@ -101,9 +101,10 @@ GST_DEBUG_CATEGORY_STATIC (gst_sctpsink_debug_category);
 
 /* #define SCTP_USRSCTP_DEBUG                   (SCTP_DEBUG_INDATA1|SCTP_DEBUG_TIMER1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_INPUT1|SCTP_DEBUG_INPUT2|SCTP_DEBUG_OUTPUT2) */
 /* #define SCTP_USRSCTP_DEBUG                  (SCTP_DEBUG_TIMER3|SCTP_DEBUG_OUTPUT1|SCTP_DEBUG_OUTPUT2|SCTP_DEBUG_OUTPUT3|SCTP_DEBUG_OUTPUT4) //|SCTP_DEBUG_INDATA1|SCTP_DEBUG_INPUT1) //|SCTP_DEBUG_OUTPUT4) */
-// #define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_UTIL2
+/* #define SCTP_USRSCTP_DEBUG                  (SCTP_DEBUG_OUTPUT4|SCTP_DEBUG_UTIL2) */
+#define SCTP_USRSCTP_DEBUG                  SCTP_DEBUG_OUTPUT4
 /* (SCTP_DEBUG_TIMER3|SCTP_DEBUG_UTIL2) */
-// #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL
+/* #define SCTP_USRSCTP_DEBUG                   SCTP_DEBUG_ALL */
 
 #define SCTP_PPID       99
 #define SCTP_SID        1
@@ -621,8 +622,8 @@ gst_sctpsink_start (GstBaseSink * sink)
                 usrsctp_debug_printf_sender);
 
 #ifdef SCTP_DEBUG
-   // usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);
-   // usrsctp_sysctl_set_sctp_logging_level(SCTP_CWND_LOGGING_ENABLE|SCTP_CWND_MONITOR_ENABLE);
+   usrsctp_sysctl_set_sctp_debug_on(SCTP_USRSCTP_DEBUG);
+   usrsctp_sysctl_set_sctp_logging_level(SCTP_CWND_LOGGING_ENABLE|SCTP_CWND_MONITOR_ENABLE);
          /* SCTP_LTRACE_ERROR_ENABLE|SCTP_LTRACE_CHUNK_ENABLE); */
 #endif
 
