@@ -243,14 +243,6 @@ class Run():
         #  self.trace = np.genfromtxt(file_experiment_trace_in, names=True, delimiter=';', dtype=np.int64)
         #  self.trace_jb = np.genfromtxt(self.file_experiment_trace_out, names=True, delimiter=';', dtype=int)
         self.trace = pd.read_csv(file_experiment_trace_in, delimiter=';')
-        trace_all = self.trace
-
-        self.trace = self.trace.drop_duplicates('seqnum')  # keeps the first, by index! (which is the lower "now")
-        self.duplicates_unmasked = len(trace_all) - len(self.trace)
-
-        if len(self.trace) < (cutoff_init + cutoff_end):
-            print("trace too short %d" % len(self.trace))
-            raise InvalidValue
 
         # XXX should be a parameter in ResultsDir
         if args.pathfailure is True:
@@ -285,9 +277,18 @@ class Run():
                                     (self.trace.seqnum < (self.packets_sent_stream_unmasked - cutoff_end))]
 
         self.trace['ttd'] = self.trace.now - self.trace.rtptime
+
+        len_trace_all = len(self.trace)
+        self.trace.drop_duplicates('seqnum', keep='first', inplace=True)  # keeps the first, by index! (which is the lower "now")
+        self.duplicates_unmasked = len_trace_all - len(self.trace)  # this does not contain duplicates filtered out in usrsctp
+        #  self.trace_duplicates = trace_all[trace_all.duplicated('seqnum', keep='last')]
+        #  assert len(self.trace_duplicates) == len(trace_all) - len(self.trace)
+
+        if len(self.trace) < (cutoff_init + cutoff_end):
+            print("trace too short %d" % len(self.trace))
+            raise InvalidValue
+
         self.start_time = min(self.trace['rtptime'])
-
-
         if min(self.trace.ttd) <= 0:
             print("negative ttd ", min(self.trace.ttd), " in ", file_experiment_trace_in)
             #  fig, ax = plt.subplots()
@@ -523,6 +524,13 @@ class Run():
         tmp['ttd'] = tmp['ttd']/1000000
         return tmp
 
+    #  def delay_over_time_duplicates(self):
+    #      '''returns the ttd over time t for duplicates, starting with 0 at the first sending of a packet'''
+    #      tmp = self.trace_duplicates[['now', 'ttd']]
+    #      tmp['now'] = (tmp['now'] - self.start_time)/1000000000
+    #      tmp['ttd'] = tmp['ttd']/1000000
+    #      return tmp
+
     #  def delay_over_time_jb(self):
     #      return (self.trace_jb['now'] - self.start_time), self.trace_jb['ttd']
 
@@ -593,17 +601,28 @@ class ResultsDir():
 
 
 def plot_delay_over_time(run):
-    ttd = run.delay_over_time()
+    if args.save:
+        save_file = os.path.join(args.lab, 'plots/ttd_time_%s_%03dms_%.1f_%0d.png' %
+                                 (run.variant, run.delay, run.drop_rate, run.run_id))
+        if os.path.isfile(save_file):
+            print("skipped", save_file)
+            return
+
     fig, ax = plt.subplots()
+    ttd = run.delay_over_time()
     ttd.plot(x='now', y='ttd', label=run.variant, legend=True,
              marker='.', linestyle='', markersize=.5,
              ax=ax, sharey=ax, sharex=ax)
+
+    #  ttd_dupl = run.delay_over_time_duplicates()
+    #  if len(ttd_dupl) > 0:
+    #      ttd_dupl.plot(x='now', y='ttd', label=run.variant + ' dupl', legend=True,
+    #                    marker='+', linestyle='', markersize=.5,
+    #                    ax=ax, sharey=ax, sharex=ax)
     plt.title('TTD over time at delay {}ms, drop {}%'.format(run.delay, run.drop_rate))
     ax.set_ylabel('TTD [ms]')
     ax.set_xlabel('Time [s]')
     if args.save:
-        save_file = os.path.join(args.lab, 'plots/ttd_time_%s_%03dms_%.1f_%0d.png' %
-                                 (run.variant, run.delay, run.drop_rate, run.run_id))
         fig.savefig(save_file)
         plt.close()
         print("saved", save_file)
@@ -680,7 +699,8 @@ def plot_hist_multi(exps, label, title, subtitle=''):
         # especially for small sample sizes in order to get an unbiased CDF:
         ser[len(ser)] = ser.iloc[-1]
         # the sorted ttd values become the index (x) whereas 0..1 is applied to the y values
-        ser_cdf = pd.Series(np.linspace(0., e.ddr, len(ser)), index=ser)
+        ser_cdf = pd.Series(np.linspace(0., 1 - e.lost / e.packets_sent_stream,  # goes up to the number of packets arrived
+                                        len(ser)), index=ser)
         ser_cdf.plot(label=eval(label), drawstyle='steps',  # color=c,
                      linewidth=1,
                      #  legend=False, mark_right=False, secondary_y=True,
@@ -1018,22 +1038,22 @@ if args.plotall:
 
         # hist over drop
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='cmt', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='cmt', drop=(0, .5, 2, 5, 7, 10))
 
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='dupl', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='dupl', drop=(0, .5, 2, 5, 7, 10))
 
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='single', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='single', drop=(0, .5, 2, 5, 7, 10))
 
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='udp', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='udp', drop=(0, .5, 2, 5, 7, 10))
 
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='dpr', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='dpr', drop=(0, .5, 2, 5, 7, 10))
 
         for i in (20, 40, 60, 80, 100, 120, 150, 200):
-            plot_hist_over_drop(delay=i, var='udpdupl', drop=(0, .5, 2, 5, 10))
+            plot_hist_over_drop(delay=i, var='udpdupl', drop=(0, .5, 2, 5, 7, 10))
 
         # histograms on different variations
         for i in (0, 0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
@@ -1043,12 +1063,12 @@ if args.plotall:
             plot_hist_over_var(drop=i, delay=80)
             plot_hist_over_var(drop=i, delay=100)
 
-else:
-    # plot_hist_over_drop(var='dpr', delay=40)
-    for r in all_exp[0].runs:
-        plot_delay_over_time(r)
+#  else:
+#      # plot_hist_over_drop(var='dpr', delay=40)
+#      for r in all_exp[0].runs:
+#          plot_delay_over_time(r)
 
 
-#  embed()
+embed()
 
 exit()
