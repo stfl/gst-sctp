@@ -66,11 +66,11 @@ fi
 
 local ip_sender=${IP_SENDER:-192.168.153.132}
 local ip_receiver=${IP_RECEIVER:-192.168.153.135}
-ip a | grep -q ${ip_receiver}
-if (( $? )); then
-   echo "wrong receiver ip"
-   exit
-fi
+# ip a | grep -q ${ip_receiver}
+# if (( $? )); then
+#    echo "wrong receiver ip"
+#    exit
+# fi
 
 local phy1=${PHY1:-ens37}
 local phy2=${PHY2:-ens38}

@@ -874,14 +874,14 @@ gst_sctpsink_stop (GstBaseSink * sink)
 
    GST_INFO_OBJECT(sctpsink, "output ordered chunks\t\t\t%u",                         stat.sctps_outorderchunks);
    GST_INFO_OBJECT(sctpsink, "output unordered chunks\t\t\t%u",                       stat.sctps_outunorderchunks);
-	GST_INFO_OBJECT(sctpsink, "output control chunks\t\t\t%u",                         stat.sctps_outcontrolchunks);
+   GST_INFO_OBJECT(sctpsink, "output control chunks\t\t\t%u",                         stat.sctps_outcontrolchunks);
    GST_INFO_OBJECT(sctpsink, "out of the blue\t\t\t\t%u",                             stat.sctps_outoftheblue);
 
    GST_INFO_OBJECT(sctpsink, "input control chunks\t\t\t%u",                          stat.sctps_incontrolchunks);
    GST_INFO_OBJECT(sctpsink, "input ordered chunks\t\t\t%u",                          stat.sctps_inorderchunks);
    GST_INFO_OBJECT(sctpsink, "input unordered chunks\t\t\t%u",                        stat.sctps_inunorderchunks);
 
-	GST_INFO_OBJECT(sctpsink, "total output SACKs\t\t\t%u",                            stat.sctps_sendsacks);
+   GST_INFO_OBJECT(sctpsink, "total output SACKs\t\t\t%u",                            stat.sctps_sendsacks);
    GST_INFO_OBJECT(sctpsink, "total input SACKs\t\t\t%u",                             stat.sctps_recvsacks);
 
    GST_INFO_OBJECT(sctpsink, "ip_output error counter\t\t\t%u",                       stat.sctps_senderrors);

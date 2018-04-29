@@ -1,9 +1,10 @@
 
 " compiler pyunit
 
+let b:dispatch = '-dir=/home/slendl/Projects/gst/gst-sctp/ python % --lab lab_results_D200_path_failure --pathfailure --plotall --save' 
 augroup my_dispatch
    autocmd!
-   autocmd BufReadPost *.py let b:dispatch = '-dir=/home/slendl/Projects/gst/gst-sctp/ python % --lab lab_results'
+   autocmd BufReadPost *.py let b:dispatch = '-dir=/home/slendl/Projects/gst/gst-sctp/ python % --lab lab_results_D200_path_failure --pathfailure --plotall --save'
    " --results ../results/2017-10-20_00:50/ --results ../results/2017-10-23_14:12/'
 augroup END
 

@@ -35,9 +35,10 @@ init_offset = 3 * fps  # frames
 num_packets_per_frame = 11
 payload_length = 1400  # RTP header is included in the TRO metric
 drop_correlation = .25
+gst_sched_delay = 1. / fps  # in S
 cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
-pf_time_measure = 5
+pf_time_measure = 3
 
 plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
                'blue', 'purple', 'fuchsia', 'maroon', 'green']
@@ -230,6 +231,9 @@ class Run():
         self.packets_sent_stream_unmasked = self.results_dir.num_frames * num_packets_per_frame
         self.packets_sent_stream = self.packets_sent_stream_unmasked - cutoff_init - cutoff_end
         self.receiver_killed = os.path.isfile(os.path.join(self.run_path, 'receiver_killed_' + str(self.run_id)))
+        self.pf_last_seqnum = -1
+
+
         if self.receiver_killed:
             print('receiver killed')
             raise ReceiverKilled
@@ -250,57 +254,71 @@ class Run():
                                       decode_as={'sctp.ppi==99': 'asap', 'udp.port==55555': 'rtp'})
             #  cap.set_debug()
             cap.load_packets()
-            embed()
+            #  embed()
             for p in reversed(cap):
                 if 'asap' in p and 'message_length' in p.asap.field_names:
                     # asap message length overlaps with RTP seqnum
-                    self.pf_last_seqnum = int(p.asap.message_length)
+                    seqnum = int(p.asap.message_length)
+
                     #  print('last data packet on failed path: src:', p.ip.src, 'TSN:',
                     #        p.sctp.data_tsn, 'Seqnum:', p.asap.message_length)
-                    break
                 elif 'rtp' in p:
-                    self.pf_last_seqnum = int(p.rtp.seq)
-                    break
+                    seqnum = int(p.rtp.seq)
 
-            #  assert self.pf_last_seqnum + self.packets_sent_stream
+                if seqnum > self.pf_last_seqnum:
+                    self.pf_last_seqnum = seqnum
+                elif seqnum < self.pf_last_seqnum - 100:
+                    # don't search too long
+                    break
 
             self.packets_sent_stream = pf_time_measure * fps * num_packets_per_frame
-            self.trace = self.trace[(self.trace.seqnum >= self.pf_last_seqnum) &
-                                    (self.trace.seqnum < self.pf_last_seqnum +
-                                     self.packets_sent_stream)]
-            # TODO make this work with actual time stamps
+            self.trace_full = self.trace.copy()
 
-            print(self.pf_last_seqnum, self.pf_last_seqnum + self.packets_sent_stream)
+            self.start_time = min(self.trace_full['rtptime'])
+            self.pf_rtptime = min(self.trace_full[self.trace_full.seqnum == self.pf_last_seqnum]['rtptime'])
+            self.pf_time = self.pf_rtptime - self.start_time
+            if self.pf_time < 3:
+                print("pf_time seems to be wrong %d" % self.pf_time)
+                raise InvalidValue
+
+            self.trace.drop_duplicates('seqnum', keep='first', inplace=True)  # keeps the first, by index! (which is the lower "now")
+            self.trace = self.trace[(self.trace.rtptime > self.pf_rtptime) &
+                                    (self.trace.rtptime < self.pf_rtptime + pf_time_measure * 1000000000)]
+
+
+            print(self.variant, "last:", self.pf_last_seqnum,
+                  "t_pf:", self.pf_time/1000000000,
+                  "cutoff:", self.pf_last_seqnum + self.packets_sent_stream,
+                  "trace:", len(self.trace), "/", self.packets_sent_stream)
+
+            self.trace['ttd'] = self.trace.now - self.trace.rtptime
         else:
             # cut off init phase and end phase
+
             self.trace = self.trace[(self.trace.seqnum >= cutoff_init) &
                                     (self.trace.seqnum < (self.packets_sent_stream_unmasked - cutoff_end))]
 
-        self.trace['ttd'] = self.trace.now - self.trace.rtptime
+            len_trace_all = len(self.trace)
+            self.trace.drop_duplicates('seqnum', keep='first', inplace=True)  # keeps the first, by index! (which is the lower "now")
+            self.trace['ttd'] = self.trace.now - self.trace.rtptime
 
-        len_trace_all = len(self.trace)
-        self.trace.drop_duplicates('seqnum', keep='first', inplace=True)  # keeps the first, by index! (which is the lower "now")
-        self.duplicates_unmasked = len_trace_all - len(self.trace)  # this does not contain duplicates filtered out in usrsctp
-        #  self.trace_duplicates = trace_all[trace_all.duplicated('seqnum', keep='last')]
-        #  assert len(self.trace_duplicates) == len(trace_all) - len(self.trace)
+            if len(self.trace) < (cutoff_init + cutoff_end):
+                print("trace too short %d" % len(self.trace))
+                raise InvalidValue
 
-        if len(self.trace) < (cutoff_init + cutoff_end):
-            print("trace too short %d" % len(self.trace))
-            raise InvalidValue
+            self.start_time = min(self.trace['rtptime'])
+            if min(self.trace.ttd) <= 0:
+                print("negative ttd ", min(self.trace.ttd), " in ", file_experiment_trace_in)
+                #  fig, ax = plt.subplots()
+                #  df = pd.DataFrame(self.trace, columns=['rtptime', 'now']) / 1000000
+                #  df.plot(sharey=True, ax=ax)
+                #  (self.trace.ttd / 1000000).plot(secondary_y=True, label='TTD', legend=True, mark_right=False)
+                #  ax.set_xlabel('Sequencenumer')
+                #  ax.set_ylabel('Timestamp [ms]')
+                #  ax.right_ax.set_ylabel('TTD [ms]')
+                #  plt.show()
 
-        self.start_time = min(self.trace['rtptime'])
-        if min(self.trace.ttd) <= 0:
-            print("negative ttd ", min(self.trace.ttd), " in ", file_experiment_trace_in)
-            #  fig, ax = plt.subplots()
-            #  df = pd.DataFrame(self.trace, columns=['rtptime', 'now']) / 1000000
-            #  df.plot(sharey=True, ax=ax)
-            #  (self.trace.ttd / 1000000).plot(secondary_y=True, label='TTD', legend=True, mark_right=False)
-            #  ax.set_xlabel('Sequencenumer')
-            #  ax.set_ylabel('Timestamp [ms]')
-            #  ax.right_ax.set_ylabel('TTD [ms]')
-            #  plt.show()
-
-            raise InvalidValue
+                raise InvalidValue
         #  assert min(self.trace.ttd) > 0
 
         # calc DDR
@@ -519,8 +537,12 @@ class Run():
 
     def delay_over_time(self):
         '''returns the ttd over time t, starting with 0 at the first sending of a packet'''
-        tmp = self.trace[['now', 'ttd']]
-        tmp['now'] = (tmp['now'] - self.start_time)/1000000000
+        if args.pathfailure:
+            self.trace_full['ttd'] = self.trace_full.now - self.trace_full.rtptime
+            tmp = self.trace_full[['rtptime', 'ttd']]
+        else:
+            tmp = self.trace[['rtptime', 'ttd']]
+        tmp['rtptime'] = (tmp['rtptime'] - self.start_time)/1000000000
         tmp['ttd'] = tmp['ttd']/1000000
         return tmp
 
@@ -610,10 +632,13 @@ def plot_delay_over_time(run):
 
     fig, ax = plt.subplots()
     ttd = run.delay_over_time()
-    ttd.plot(x='now', y='ttd', label=run.variant, legend=True,
+    ttd.plot(x='rtptime', y='ttd', label=run.variant, legend=True,
              marker='.', linestyle='', markersize=.5,
              ax=ax, sharey=ax, sharex=ax)
 
+    if args.pathfailure:
+        plt.axvline(x=run.pf_time/1000000000, linestyle='--', color='gray', linewidth=1)
+        plt.axvline(x=run.pf_time/1000000000 + pf_time_measure, linestyle='--', color='gray', linewidth=1)
     #  ttd_dupl = run.delay_over_time_duplicates()
     #  if len(ttd_dupl) > 0:
     #      ttd_dupl.plot(x='now', y='ttd', label=run.variant + ' dupl', legend=True,
@@ -990,6 +1015,11 @@ if args.plotall:
     if args.pathfailure:
         for e in all_exp:
             for r in e.runs:
+                print("last:", r.pf_last_seqnum,
+                      "t_pf:", r.pf_time/1000000000.,
+                      "t_pf:", r.pf_time/1000000000.,
+                      "cutoff:", r.pf_last_seqnum + r.packets_sent_stream,
+                      "trace:", len(r.trace), "/", r.packets_sent_stream)
                 plot_delay_over_time(r)
 
         plot_ddr_over_delay(drop=0.)
@@ -1063,12 +1093,9 @@ if args.plotall:
             plot_hist_over_var(drop=i, delay=80)
             plot_hist_over_var(drop=i, delay=100)
 
-#  else:
-#      # plot_hist_over_drop(var='dpr', delay=40)
-#      for r in all_exp[0].runs:
-#          plot_delay_over_time(r)
-
-
-embed()
+else:
+    # plot_hist_over_drop(var='dpr', delay=40)
+    for r in all_exp[0].runs:
+        plot_delay_over_time(r)
 
 exit()
