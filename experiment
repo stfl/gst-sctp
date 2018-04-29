@@ -335,7 +335,7 @@ if (( ${+commit[1]} )) && (( ! ${+nowrite[1]} )); then
    mkdir lab_results
    mv ${project_dir}/results/${run_date} lab_results/
    git add lab_results/${run_date}
-   git commit -m "lab results: ${run_date}"
+   git commit -m "lab results: ${run_date}\nD:${deadline} n:${num_frames} d:${testing_delay} V:${testing_variants} dr:${testing_drop}%"
    git push
 fi
 
