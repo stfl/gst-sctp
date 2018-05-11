@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 import shelve
+from copy import deepcopy, copy
 import sys
 import os
 import glob
@@ -54,6 +55,7 @@ class Experiment:
         self.runs = []
         self.num_runs = results_dir.num_runs
         self.__collect_runs()
+        self.accomodating_gst_delay = False
 
         if self.num_runs > 0:
             self.trace = pd.concat([r.trace for r in self.runs])
@@ -111,7 +113,10 @@ class Experiment:
     @property
     def deadline_hit(self):
         #  return sum(r.deadline_hit for r in self.runs)
-        return len(self.trace.query('ttd <= (@self.deadline * 1000000)'))
+        if self.accomodating_gst_delay is True:
+            return len(self.trace.query('ttd <= ((@self.deadline * 1000000) + @gst_sched_delay * 1000000000)'))
+        else:
+            return len(self.trace.query('ttd <= (@self.deadline * 1000000)'))
 
     @property
     def lost(self):
@@ -677,23 +682,25 @@ def plot_hist(exp):
 
 def plot_hist_over_drop(var, delay, drop=all):
     global all_exp
-    plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay and (drop == all or e.drop_rate in drop)],
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.delay == delay
+                     and (drop == all or e.drop_rate in drop) and e.variant is not 'dupl'],
                     label="str(e.drop_rate * (1 + drop_correlation))+'%'",
-                    title='TTD at different Packet Drop Rates',
+                    title='TTD for different PDR',
                     subtitle='Variant: %s, Link Delay: %dms' % (var, delay))
 
 
 def plot_hist_over_delay(var, drop, delay=all):
     global all_exp
-    plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop) and (delay == all or e.delay in delay)],
-                    label="str(e.delay)+'ms'", title='TTD at different Link Delays',
+    plot_hist_multi([e for e in all_exp if e.variant == var and e.drop_rate == float(drop)
+                     and (delay == all or e.delay in delay)],
+                    label="str(e.delay)+'ms'", title='TTD for different Link Delay',
                     subtitle='Variant: {}, PDR: {:.1f}%'.format(var, drop * (1 + drop_correlation)))
 
 
 def plot_hist_over_var(delay, drop):
     global all_exp
-    plot_hist_multi([e for e in all_exp if e.drop_rate == float(drop) and e.delay == delay],
-                    label="str(e.variant)", title='TTD at different Duplication Variants',
+    plot_hist_multi([e for e in all_exp if e.drop_rate == float(drop) and e.delay == delay and e.variant is not 'dupl'],
+                    label="str(e.variant)", title='TTD for different Duplication Variants',
                     subtitle='Link Delay: %dms, PDR: %.1f%%' % (delay, drop * (1 + drop_correlation)))
 
 
@@ -744,7 +751,8 @@ def plot_hist_multi(exps, label, title, subtitle=''):
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
     ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
-    ax.set_xlabel('Cumulative')
+    ax.set_xlabel('TTD [ms]')
+    ax.set_ylabel('Cumulative')
     plt.xlim((0, exps[0].deadline * 4 / 3))
     plt.ylim((0, 1.05))
 
@@ -763,7 +771,8 @@ def plot_ddr_over_drop(delay):
             print("skipped", save_file)
             return
 
-    all_df_grouped = all_df[all_df.delay == delay].sort_values(
+    all_df_grouped = all_df[(all_df.variant != 'dupl') &
+                            (all_df.delay == delay)].sort_values(
         by=['variant', 'drop']).groupby('variant', sort=False)
     if len(all_df_grouped) == 0:
         print('empty plot')
@@ -776,15 +785,15 @@ def plot_ddr_over_drop(delay):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
-    plt.suptitle('DDR at different Duplication Variants', y=.96)
+    plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
     plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
     ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
-    ax.set_ylabel('DDR')
-    ax.set_xlabel('Packet Drop Rate on the link [%]')
+    ax.set_ylabel('DDR' if not args.pathfailure else "PFI")
+    ax.set_xlabel('PDR on the link [%]')
     if args.save:
         fig.savefig(save_file)
         plt.close()
@@ -800,7 +809,8 @@ def plot_ddr_over_delay(drop):
             print("skipped", save_file)
             return
 
-    all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values(
+    all_df_grouped = all_df[(all_df.variant != 'dupl') &
+                            (all_df['drop'] == float(drop))].sort_values(
         by=['variant', 'delay']).groupby('variant', sort=False)
     if len(all_df_grouped) == 0:
         print('empty plot')
@@ -812,14 +822,14 @@ def plot_ddr_over_delay(drop):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
-    plt.suptitle('DDR at different Duplication Variants', y=.96)
+    plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
     plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
     ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
-    ax.set_ylabel('DDR')
+    ax.set_ylabel('DDR' if not args.pathfailure else "PFI")
     ax.set_xlabel('Delay on the link [ms]')
     if args.save:
         fig.savefig(save_file)
@@ -837,8 +847,10 @@ def plot_tro_over_drop(delay):
             return
 
     global all_df
-    all_df_grouped = all_df[all_df.delay == delay].sort_values(
-        by=['variant', 'drop']).groupby('variant', sort=False)
+    all_df_grouped = all_df[(all_df.variant != 'dpr_acc') &
+                            (all_df.variant != 'dupl') &
+                            (all_df.delay == delay)].sort_values(
+                     by=['variant', 'drop']).groupby('variant', sort=False)
     if len(all_df_grouped) == 0:
         print('empty plot')
         return
@@ -850,7 +862,7 @@ def plot_tro_over_drop(delay):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)
 
-    plt.suptitle('TRO at different Duplication Variants', y=.96)
+    plt.suptitle('TRO for different Duplication Variants', y=.96)
     plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
@@ -858,7 +870,7 @@ def plot_tro_over_drop(delay):
     ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
     ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
     ax.set_ylabel('TRO')
-    ax.set_xlabel('Packet Drop Rate on the link [%]')
+    ax.set_xlabel('PDR on the link [%]')
 
     if args.save:
         fig.savefig(save_file)
@@ -875,7 +887,9 @@ def plot_tro_over_delay(drop):
             print("skipped", save_file)
             return
 
-    all_df_grouped = all_df[all_df['drop'] == float(drop)].sort_values(
+    all_df_grouped = all_df[(all_df.variant != 'dpr_acc') &
+                            (all_df.variant != 'dupl') &
+                            (all_df['drop'] == float(drop))].sort_values(
         by=['variant', 'delay']).groupby('variant', sort=False)
     if len(all_df_grouped) == 0:
         print('empty plot')
@@ -887,7 +901,7 @@ def plot_tro_over_delay(drop):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)
 
-    plt.suptitle('TRO at different Duplication Variants', y=.96)
+    plt.suptitle('TRO for different Duplication Variants', y=.96)
     plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
@@ -1007,6 +1021,33 @@ if args.save:
     if not os.path.exists(os.path.join(args.lab, 'plots')):
         os.makedirs(os.path.join(args.lab, 'plots'))
 
+if args.rebuild:
+    print("Generating dpr_acc experiments")
+    for e in [e for e in all_exp if e.variant == 'dpr']:
+        e_new = copy(e)
+        e_new.variant = 'dpr_acc'
+        # accomodating
+        e_new.accomodating_gst_delay = True
+        #  all_exp.append(e_new)
+        all_df = all_df.append({'variant': e_new.variant,
+                                'drop': e_new.drop_rate,
+                                'delay': e_new.delay,
+                                'hit': e_new.deadline_hit,
+                                'miss':  e_new.deadline_miss,
+                                'dupl': e_new.duplicates,
+                                'lost': e_new.lost,
+                                'ddr': e_new.ddr,
+                                'runs': e_new.num_runs,
+                                'frames': e_new.num_frames,
+                                'deadline': e_new.deadline,
+                                'tro': e_new.tro_bytes,
+                                'ttd_mean': e_new.ttd_mean},
+                            ignore_index=True)
+        print(e_new)
+
+    with shelve.open(os.path.join(args.lab, "experiments")) as shelf:
+        shelf['all_df'] = all_df
+
 print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 all_exp.sort(key=attrgetter('variant', 'delay', 'drop_rate'))
 
@@ -1014,6 +1055,8 @@ all_exp.sort(key=attrgetter('variant', 'delay', 'drop_rate'))
 if args.plotall:
     if args.pathfailure:
         for e in all_exp:
+            if e.variant == 'dpr_acc':
+                continue
             for r in e.runs:
                 print("last:", r.pf_last_seqnum,
                       "t_pf:", r.pf_time/1000000000.,
@@ -1030,6 +1073,8 @@ if args.plotall:
     else:
         #  TTD traces
         for e in all_exp:
+            if e.variant == 'dpr_acc':
+                continue
             for r in e.runs:
                 plot_delay_over_time(r)
 
@@ -1095,7 +1140,8 @@ if args.plotall:
 
 else:
     # plot_hist_over_drop(var='dpr', delay=40)
-    for r in all_exp[0].runs:
-        plot_delay_over_time(r)
+    #  for r in all_exp[0].runs:
+    #      plot_delay_over_time(r)
+    embed()
 
 exit()
