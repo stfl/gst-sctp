@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 #  import numpy.lib.recfunctions as rcfuncs
 import pandas as pd
+import statistics as st
 
 import shelve
 from copy import deepcopy, copy
@@ -40,6 +41,7 @@ gst_sched_delay = 1. / fps  # in S
 cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
 pf_time_measure = 3
+rtx_deadline = 52  # ms  (D + gst_sched_delay)/3
 
 plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
                'blue', 'purple', 'fuchsia', 'maroon', 'green']
@@ -184,6 +186,19 @@ class Experiment:
     @property
     def num_frames(self):
         return self.results_dir.num_frames
+
+    @property
+    def ddr_expected(self):
+        if self.delay < (self.deadline - gst_sched_delay * 1000) / 3:
+            if self.variant == 'udp':
+                return 1 - (self.drop_rate * (1 + drop_correlation)/100)
+            else:  # single, cmt, dpr, dpr_acc, udpdupl
+                return 1 - (self.drop_rate * (1 + drop_correlation)/100) ** 2
+        else:
+            if self.variant in ['udp', 'single', 'cmt']:
+                return 1 - (self.drop_rate * (1 + drop_correlation)/100)
+            else:  # dpr, dpr_acc, udpdupl
+                return 1 - (self.drop_rate * (1 + drop_correlation)/100) ** 2
 
     def __str__(self):
         q1, q2 = self.ttd_quantile([.8, .95]) / 1000000
@@ -1021,14 +1036,17 @@ if args.save:
     if not os.path.exists(os.path.join(args.lab, 'plots')):
         os.makedirs(os.path.join(args.lab, 'plots'))
 
-if args.rebuild:
-    print("Generating dpr_acc experiments")
-    for e in [e for e in all_exp if e.variant == 'dpr']:
-        e_new = copy(e)
-        e_new.variant = 'dpr_acc'
-        # accomodating
-        e_new.accomodating_gst_delay = True
-        #  all_exp.append(e_new)
+
+print("found", len(all_exp), 'experiments with altogether', sum(len(e.runs) for e in all_exp), 'useable runs')
+print("Generating virtual dpr_acc experiments")
+for e in [e for e in all_exp if e.variant == 'dpr']:
+    e_new = copy(e)
+    e_new.variant = 'dpr_acc'
+    # accomodating
+    e_new.accomodating_gst_delay = True
+    all_exp.append(e_new)
+
+    if args.rebuild:
         all_df = all_df.append({'variant': e_new.variant,
                                 'drop': e_new.drop_rate,
                                 'delay': e_new.delay,
@@ -1042,13 +1060,13 @@ if args.rebuild:
                                 'deadline': e_new.deadline,
                                 'tro': e_new.tro_bytes,
                                 'ttd_mean': e_new.ttd_mean},
-                            ignore_index=True)
+                                ignore_index=True)
         print(e_new)
 
+if args.rebuild:
     with shelve.open(os.path.join(args.lab, "experiments")) as shelf:
         shelf['all_df'] = all_df
 
-print("found", len(all_df), 'experiments with altogether', sum(all_df.runs), 'runs')
 all_exp.sort(key=attrgetter('variant', 'delay', 'drop_rate'))
 
 
@@ -1142,6 +1160,23 @@ else:
     # plot_hist_over_drop(var='dpr', delay=40)
     #  for r in all_exp[0].runs:
     #      plot_delay_over_time(r)
-    embed()
+    #  embed()
 
+    for e in all_exp:
+        print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}% & {num_runs:2} & "
+              "{exp_ddr:6.3f} & {ddr:6.4f} & {ddr_std:7.5f} & {ddr_error:8.5f} & "
+              "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} \\\\ \midrule".format(
+                  variant="\\texttt{" + e.variant + "}",
+                  delay=e.delay,
+                  drop_rate=e.drop_rate * (1 + drop_correlation),
+                  exp_ddr=e.ddr_expected,
+                  ddr_error=e.ddr - e.ddr_expected,
+                  num_runs=e.num_runs,
+                  ddr=e.ddr,
+                  ddr_mean=st.mean(r.ddr for r in e.runs),
+                  ddr_std=st.stdev(r.ddr for r in e.runs),
+                  ttd_mean=e.ttd_mean / 1000000,
+                  ttd_q95=e.ttd_quantile(0.99) / 1000000,
+                  tro=e.tro,
+              ))
 exit()
