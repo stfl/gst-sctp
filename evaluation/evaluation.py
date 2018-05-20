@@ -653,7 +653,7 @@ def plot_delay_over_time(run):
     fig, ax = plt.subplots()
     ttd = run.delay_over_time()
     ttd.plot(x='rtptime', y='ttd', label=run.variant, legend=True,
-             marker='.', linestyle='', markersize=.5,
+             marker='.', linestyle='', markersize=1.,
              ax=ax, sharey=ax, sharex=ax)
 
     if args.pathfailure:
@@ -837,6 +837,10 @@ def plot_ddr_over_delay(drop):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
+    # plot 1/3 D as vertical grey line
+    plt.axvline(x=(200 - gst_sched_delay * 1000) / 3,
+                linestyle='--', color='gray', linewidth=1)
+
     plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
     plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
@@ -915,6 +919,10 @@ def plot_tro_over_delay(drop):
         gr.plot(y='tro', x='delay',
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)
+
+    # plot 1/3 D as vertical grey line
+    plt.axvline(x=(200 - gst_sched_delay * 1000) / 3,
+                linestyle='--', color='gray', linewidth=1)
 
     plt.suptitle('TRO for different Duplication Variants', y=.96)
     plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
@@ -1163,10 +1171,10 @@ else:
     #  embed()
 
     for e in all_exp:
-        print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}% & {num_runs:2} & "
+        print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}\\% & {num_runs:2} & "
               "{exp_ddr:6.3f} & {ddr:6.4f} & {ddr_std:7.5f} & {ddr_error:8.5f} & "
               "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} \\\\ \midrule".format(
-                  variant="\\texttt{" + e.variant + "}",
+                  variant="\\texttt{" + e.variant.replace('_', '\\_') + "}",
                   delay=e.delay,
                   drop_rate=e.drop_rate * (1 + drop_correlation),
                   exp_ddr=e.ddr_expected,
@@ -1174,7 +1182,7 @@ else:
                   num_runs=e.num_runs,
                   ddr=e.ddr,
                   ddr_mean=st.mean(r.ddr for r in e.runs),
-                  ddr_std=st.stdev(r.ddr for r in e.runs),
+                  ddr_std=st.stdev(r.ddr for r in e.runs) if e.num_runs > 1 else 0,
                   ttd_mean=e.ttd_mean / 1000000,
                   ttd_q95=e.ttd_quantile(0.99) / 1000000,
                   tro=e.tro,
