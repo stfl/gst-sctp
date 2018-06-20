@@ -284,6 +284,8 @@ class Run():
                     #        p.sctp.data_tsn, 'Seqnum:', p.asap.message_length)
                 elif 'rtp' in p:
                     seqnum = int(p.rtp.seq)
+                else:
+                    continue
 
                 if seqnum > self.pf_last_seqnum:
                     self.pf_last_seqnum = seqnum
