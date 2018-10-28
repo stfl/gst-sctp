@@ -35,13 +35,44 @@ matplotlib.style.use('ggplot')
 fps = 24
 init_offset = 3 * fps  # frames
 num_packets_per_frame = 11
-payload_length = 1400  # RTP header is included in the TRO metric
+payload_length = 1400 - 12  # MTU - RTP header
 drop_correlation = .25
 gst_sched_delay = 1. / fps  # in S
 cutoff_init = int(init_offset * num_packets_per_frame)
 cutoff_end = num_packets_per_frame  # 1 frame
 pf_time_measure = 3
 rtx_deadline = 52  # ms  (D + gst_sched_delay)/3
+
+# Headers for Transport Overhead
+header_eth = 12
+header_ip = 20
+header_rtp = 12
+header_sctp_common = 12
+header_sum_common_sctp = header_sctp_common + header_rtp + header_ip + header_eth
+
+header_udp = 8
+header_sum_upd = header_udp + header_rtp + header_ip + header_eth
+packet_udp = header_sum_upd + payload_length
+
+header_sctp_data = 16
+packet_sctp = header_sctp_data + header_sum_common_sctp + payload_length
+
+chunk_nr_sack_fast = 20 + 1 * 4  # NR-SACK with average 1x GabACK Group
+packet_nr_sack_fast = chunk_nr_sack_fast + header_sum_common_sctp
+chunk_nr_sack_slow = 20 + 6 * 4  # NR-SACK with average 2x GabACK Group
+packet_nr_sack_slow = chunk_nr_sack_slow + header_sum_common_sctp
+
+chunk_nr_sack_slow_dpr = 20 + 4 * 4  # NR-SACK with average 2x GabACK Group
+packet_nr_sack_slow_dpr = chunk_nr_sack_slow_dpr + header_sum_common_sctp
+
+chunk_fwd = 12
+packet_fwd = chunk_fwd + header_sum_common_sctp
+
+print("udp", packet_udp)
+print("sctp DATA", packet_sctp)
+print("sctp FWD", packet_fwd)
+print("sctp NR-SACK", packet_nr_sack_fast, packet_nr_sack_slow)
+
 
 plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
                'blue', 'purple', 'fuchsia', 'maroon', 'green']
@@ -145,6 +176,10 @@ class Experiment:
         return self.trace.ttd.mean()
 
     @property
+    def ttd_median(self):
+        return self.trace.ttd.median()
+
+    @property
     def ttd_std(self):
         return self.trace.ttd.std()
 
@@ -164,12 +199,46 @@ class Experiment:
 
     @property
     def tro(self):
-        return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
+        return self.tro_bytes
+        #  return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
 
+    # netem drops the packets before they are counted towards bytes_rx. The actual value is adjusted
+    # with the configured drop rate
     @property
     def tro_bytes(self):
-        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation) * self.drop_rate / 100)
+        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation +
+                                                       drop_correlation ** 2 +
+                                                       drop_correlation ** 3)
+                                                  * self.drop_rate / 100)
         return (bytes_sent_full / self.bytes_sent_stream) - 1
+
+    @property
+    def tro_expected(self):
+        drop_actual = (1 + drop_correlation) * self.drop_rate / 100
+
+        if self.variant == 'udp':
+            return packet_udp / payload_length - 1
+        elif self.variant == 'udpdupl':
+            return 2 * packet_udp / payload_length - 1
+        elif self.delay < (self.deadline - gst_sched_delay * 1000) / 3:
+                return ((packet_sctp
+                         + packet_nr_sack_fast
+                         + packet_sctp * drop_actual  # fast retransmissions
+                         + chunk_fwd * drop_actual  # / num_packets_per_frame
+                         ) / payload_length) - 1
+        else:
+            if self.variant == 'dpr' or self.variant == 'dpr_acc':
+                return ((packet_sctp * 2
+                         + packet_nr_sack_slow
+                         + chunk_fwd  # / num_packets_per_frame
+                         ) / payload_length) - 1
+            else:
+                return ((packet_sctp
+                         + packet_nr_sack_slow * (1 - drop_actual)
+                         + chunk_fwd  # / num_packets_per_frame
+                         ) / payload_length) - 1
+        return 0
+
 
     @property
     def bytes_sent_link(self):
@@ -205,7 +274,7 @@ class Experiment:
         exp_str = ("Variant:{variant} delay:{delay}ms drop:{drop:.1f}%({drop_full:.1f}%) D:{deadline}ms frames:{frames} {runs}runs\n"
                    "sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
                    "TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
-                   "link:{link:6d} dupl:{dupl:5d} TRO:{tro_bytes:.2%} s_blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
+                   "link:{link:6d} dupl:{dupl:5d} TRO:{tro_bytes:.2%} TROe:{tro_exp:.2%} s_blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
                    #  "rtx:{rtx}, abnd:{abandoned}\n"
                    .format(delay=self.delay,
                            deadline=self.deadline,
@@ -224,6 +293,7 @@ class Experiment:
                            dupl=self.duplicates_unmasked,
                            tro=self.tro,
                            tro_bytes=self.tro_bytes,
+                           tro_exp=self.tro_expected,
                            mean=self.ttd_mean/1000000,
                            std=self.ttd_std/1000000,
                            max=self.ttd_max/1000000,
@@ -525,11 +595,15 @@ class Run():
 
     @property
     def tro(self):
-        return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
+        return self.tro_bytes
+        #  return self.packets_sent_link / float(self.packets_sent_stream_unmasked - self.sender_buffer_blocked) - 1
 
     @property
     def tro_bytes(self):
-        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation) * self.drop_rate / 100)
+        bytes_sent_full = self.bytes_sent_link / (1 - (1 + drop_correlation +
+                                                       drop_correlation ** 2 +
+                                                       drop_correlation ** 3)
+                                                  * self.drop_rate / 100)
         return (bytes_sent_full / self.bytes_sent_stream) - 1
 
     #  @property
@@ -1173,9 +1247,11 @@ else:
     #  embed()
 
     for e in all_exp:
+        # print latex table
         print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}\\% & {num_runs:2} & "
               "{exp_ddr:6.3f} & {ddr:6.4f} & {ddr_std:7.5f} & {ddr_error:8.5f} & "
-              "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} \\\\ \midrule".format(
+              "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro_exp:5.2f} & {tro:5.2f} \\\\ \midrule".format(
+              #  "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} & {tro_exp:5.2f} {sent: 8d} | {lost: 5d} ({loss_rate:4.1f})% | {dupl: 4d} ({dupl_rate:4.1f})% ".format(
                   variant="\\texttt{" + e.variant.replace('_', '\\_') + "}",
                   delay=e.delay,
                   drop_rate=e.drop_rate * (1 + drop_correlation),
@@ -1185,8 +1261,14 @@ else:
                   ddr=e.ddr,
                   ddr_mean=st.mean(r.ddr for r in e.runs),
                   ddr_std=st.stdev(r.ddr for r in e.runs) if e.num_runs > 1 else 0,
-                  ttd_mean=e.ttd_mean / 1000000,
+                  ttd_mean=e.ttd_median / 1000000,
                   ttd_q95=e.ttd_quantile(0.99) / 1000000,
-                  tro=e.tro,
+                  tro=e.tro_bytes,
+                  tro_exp=e.tro_expected,
+                  sent=e.packets_sent_stream,
+                  lost=e.lost,
+                  loss_rate=(e.lost / e.packets_sent_stream_unmasked) * 100 if e.lost != 0 else 0,
+                  dupl=e.duplicates,
+                  dupl_rate=(e.duplicates_unmasked / e.packets_sent_stream_unmasked) * 100 if e.duplicates_unmasked != 0 else 0
               ))
 exit()
