@@ -728,7 +728,7 @@ def plot_delay_over_time(run):
 
     fig, ax = plt.subplots()
     ttd = run.delay_over_time()
-    ttd.plot(x='rtptime', y='ttd', label=run.variant, legend=True,
+    ttd.plot(x='rtptime', y='ttd', label=run.variant, legend=False,
              marker='.', linestyle='', markersize=1.,
              ax=ax, sharey=ax, sharex=ax)
 
@@ -740,7 +740,7 @@ def plot_delay_over_time(run):
     #      ttd_dupl.plot(x='now', y='ttd', label=run.variant + ' dupl', legend=True,
     #                    marker='+', linestyle='', markersize=.5,
     #                    ax=ax, sharey=ax, sharex=ax)
-    plt.title('TTD over time at delay {}ms, drop {}%'.format(run.delay, run.drop_rate))
+    #  plt.title('TTD over time at delay {}ms, drop {}%'.format(run.delay, run.drop_rate))
     ax.set_ylabel('TTD [ms]')
     ax.set_xlabel('Time [s]')
     if args.save:
@@ -837,8 +837,8 @@ def plot_hist_multi(exps, label, title, subtitle=''):
 
     plt.axvline(x=exps[0].deadline, linestyle='--', color='gray', linewidth=1)
 
-    plt.suptitle(title, y=.96)
-    plt.title(subtitle, fontsize=10)
+    #  plt.suptitle(title, y=.96)
+    #  plt.title(subtitle, fontsize=10)
     box = ax.get_position()
     ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
     ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
@@ -876,8 +876,8 @@ def plot_ddr_over_drop(delay):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
-    plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
-    plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
+    #  plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
+    #  plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
     box = ax.get_position()
@@ -917,8 +917,8 @@ def plot_ddr_over_delay(drop):
     plt.axvline(x=(200 - gst_sched_delay * 1000) / 3,
                 linestyle='--', color='gray', linewidth=1)
 
-    plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
-    plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
+    #  plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
+    #  plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
     box = ax.get_position()
@@ -957,8 +957,8 @@ def plot_tro_over_drop(delay):
                 linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
                 ax=ax, sharex=ax, sharey=ax)
 
-    plt.suptitle('TRO for different Duplication Variants', y=.96)
-    plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
+    #  plt.suptitle('TRO for different Duplication Variants', y=.96)
+    #  plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
     box = ax.get_position()
@@ -1000,8 +1000,8 @@ def plot_tro_over_delay(drop):
     plt.axvline(x=(200 - gst_sched_delay * 1000) / 3,
                 linestyle='--', color='gray', linewidth=1)
 
-    plt.suptitle('TRO for different Duplication Variants', y=.96)
-    plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
+    #  plt.suptitle('TRO for different Duplication Variants', y=.96)
+    #  plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
     box = ax.get_position()
@@ -1168,9 +1168,11 @@ if args.plotall:
                 plot_delay_over_time(r)
 
         plot_ddr_over_delay(drop=0.)
+        plot_ddr_over_delay(drop=10.)
 
         for i in (20, 40, 60, 80, 100, 120, 150):
             plot_hist_over_var(drop=0., delay=i)
+            plot_hist_over_var(drop=10., delay=i)
 
     else:
         #  TTD traces
