@@ -26,7 +26,12 @@ from eval_exceptions import InvalidValue, ReceiverKilled
 
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.style.use('ggplot')
+#  matplotlib.style.use('ggplot')
+matplotlib.style.use('fivethirtyeight')
+plt.rcParams['axes.facecolor'] = 'white'
+plt.rcParams['axes.edgecolor'] = 'none'
+plt.rcParams['savefig.facecolor'] = 'white'
+plt.rcParams['savefig.edgecolor'] = 'none'
 
 #  from scipy.interpolate import UnivariateSpline
 #  import math
@@ -77,6 +82,23 @@ print("sctp NR-SACK", packet_nr_sack_fast, packet_nr_sack_slow)
 plot_colors = ['maroon', 'red', 'olive', 'yellow', 'green', 'lime', 'teal', 'orange', 'aqua', 'navy',
                'blue', 'purple', 'fuchsia', 'maroon', 'green']
 
+plot_colors_variant = {'single': 'black',
+                       'cmt': 'green',
+                       'dpr': 'blue',
+                       'dpr_acc': 'purple',
+                       'dupl': 'gray',
+                       'udp': 'orange',
+                       'udpdupl': 'red',
+                       }
+
+plot_markers_variant = {'single': 'o',
+                        'cmt': 's',
+                        'dpr': '^',
+                        'dpr_acc': 'v',
+                        'dupl': '.',
+                        'udp': 'P',
+                        'udpdupl': 'X',
+                        }
 
 class Experiment:
     '''an Experiment is a set of runs with the same characteristics, like delay, packet drop rate
@@ -274,7 +296,7 @@ class Experiment:
         exp_str = ("Variant:{variant} delay:{delay}ms drop:{drop:.1f}%({drop_full:.1f}%) D:{deadline}ms frames:{frames} {runs}runs\n"
                    "sent:{sent:5d} hit:{hit:5d} miss:{miss:4d} lost:{lost:4d} ({ml:4d}) DDR:{ddr:.2%}\n"
                    "TTD mean:{mean:6.2f} std:{std:6.2f} max:{max:6.2f} q80:{q1:6.2f} q95:{q2:6.2f}\n"
-                   "link:{link:6d} dupl:{dupl:5d} TRO:{tro_bytes:.2%} TROe:{tro_exp:.2%} s_blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
+                   "link:{link:6d} dupl:{dupl:5d} TO:{tro_bytes:.2%} TOe:{tro_exp:.2%} s_blk:{send_block} tr: {s1:.0f}/{s2:.0f}kB\n"
                    #  "rtx:{rtx}, abnd:{abandoned}\n"
                    .format(delay=self.delay,
                            deadline=self.deadline,
@@ -359,7 +381,7 @@ class Run():
 
                 if seqnum > self.pf_last_seqnum:
                     self.pf_last_seqnum = seqnum
-                elif seqnum < self.pf_last_seqnum - 100:
+                elif seqnum < self.pf_last_seqnum - 50:
                     # don't search too long
                     break
 
@@ -367,6 +389,8 @@ class Run():
             self.trace_full = self.trace.copy()
 
             self.start_time = min(self.trace_full['rtptime'])
+            #  print(self.trace_full[self.trace_full.seqnum == self.pf_last_seqnum]['rtptime'])
+            # there might have been duplicates
             self.pf_rtptime = min(self.trace_full[self.trace_full.seqnum == self.pf_last_seqnum]['rtptime'])
             self.pf_time = self.pf_rtptime - self.start_time
             if self.pf_time < 3:
@@ -375,8 +399,11 @@ class Run():
 
             self.trace.drop_duplicates('seqnum', keep='first', inplace=True)  # keeps the first, by index! (which is the lower "now")
             self.trace = self.trace[(self.trace.rtptime > self.pf_rtptime) &
-                                    (self.trace.rtptime < self.pf_rtptime + pf_time_measure * 1000000000)]
+                                    (self.trace.rtptime <= self.pf_rtptime + pf_time_measure * 1000000000)]
 
+            # show packets after path failure time
+            #  if self.variant == "udp" or self.variant == "single":
+            #      print(self.trace[self.trace.rtptime > self.pf_rtptime])
 
             print(self.variant, "last:", self.pf_last_seqnum,
                   "t_pf:", self.pf_time/1000000000,
@@ -744,7 +771,7 @@ def plot_delay_over_time(run):
     ax.set_ylabel('TTD [ms]')
     ax.set_xlabel('Time [s]')
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -824,9 +851,9 @@ def plot_hist_multi(exps, label, title, subtitle=''):
         # the sorted ttd values become the index (x) whereas 0..1 is applied to the y values
         ser_cdf = pd.Series(np.linspace(0., 1 - e.lost / e.packets_sent_stream,  # goes up to the number of packets arrived
                                         len(ser)), index=ser)
-        ser_cdf.plot(label=eval(label), drawstyle='steps',  # color=c,
-                     linewidth=1,
-                     #  legend=False, mark_right=False, secondary_y=True,
+        ser_cdf.plot(label=eval(label), drawstyle='steps',
+                     linewidth=1.5,
+                     #  legend=True,  # mark_right=False, secondary_y=True,
                      ax=ax, sharey=ax, sharex=ax)
 
         #  (e.trace.ttd/1000000).plot.hist(bins=min(150, int(e.ttd_max/1000000/10)), cumulative='True', normed=True,
@@ -840,15 +867,15 @@ def plot_hist_multi(exps, label, title, subtitle=''):
     #  plt.suptitle(title, y=.96)
     #  plt.title(subtitle, fontsize=10)
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-    ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
+    #  ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
+    ax.legend(loc='lower right')  # , bbox_to_anchor=(1., 1.01))
     ax.set_xlabel('TTD [ms]')
     ax.set_ylabel('Cumulative')
     plt.xlim((0, exps[0].deadline * 4 / 3))
-    plt.ylim((0, 1.05))
+    plt.ylim((0, 1))
 
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -873,20 +900,24 @@ def plot_ddr_over_drop(delay):
     for t, gr in all_df_grouped:
         gr['drop'] = gr['drop'] * (1 + drop_correlation)
         gr.plot(y='ddr', x='drop',
-                linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
+                linestyle='--', linewidth=.3,
+                marker=plot_markers_variant[gr['variant'].iloc[0]],
+                markersize=8, label=t,
+                color=plot_colors_variant[gr['variant'].iloc[0]],
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
     #  plt.suptitle('{} for different Duplication Variants'.format("DDR" if not args.pathfailure else "PFI"), y=.96)
     #  plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
+    plt.ylim(top=1)
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-    ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
+    #  ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
+    ax.legend(loc='lower left')  # , bbox_to_anchor=(1., 1.01))
     ax.set_ylabel('DDR' if not args.pathfailure else "PFI")
-    ax.set_xlabel('PDR on the link [%]')
+    ax.set_xlabel('Link PDR [%]')
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -909,8 +940,12 @@ def plot_ddr_over_delay(drop):
 
     fig, ax = plt.subplots()
     for t, gr in all_df_grouped:
+        #  embed()
         gr.plot(y='ddr', x='delay',
-                linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
+                linestyle='--', linewidth=.3,
+                marker=plot_markers_variant[gr['variant'].iloc[0]],
+                markersize=8, label=t,
+                color=plot_colors_variant[gr['variant'].iloc[0]],
                 ax=ax, sharex=ax, sharey=ax)  # , color=next(colors))
 
     # plot 1/3 D as vertical grey line
@@ -921,13 +956,15 @@ def plot_ddr_over_delay(drop):
     #  plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
+    plt.ylim(top=1)
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-    ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
+    #  ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
+    #  ax.legend()
+    ax.legend(loc='lower left')  # , bbox_to_anchor=(1., 1.01))
     ax.set_ylabel('DDR' if not args.pathfailure else "PFI")
-    ax.set_xlabel('Delay on the link [ms]')
+    ax.set_xlabel('Link Delay [ms]')
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -954,21 +991,24 @@ def plot_tro_over_drop(delay):
     for t, gr in all_df_grouped:
         gr['drop'] = gr['drop'] * (1 + drop_correlation)
         gr.plot(y='tro', x='drop',
-                linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
+                linestyle='--', linewidth=.3,
+                marker=plot_markers_variant[gr['variant'].iloc[0]],
+                markersize=8, label=t,
+                color=plot_colors_variant[gr['variant'].iloc[0]],
                 ax=ax, sharex=ax, sharey=ax)
 
-    #  plt.suptitle('TRO for different Duplication Variants', y=.96)
+    #  plt.suptitle('TO for different Duplication Variants', y=.96)
     #  plt.title('Link Delay: {}ms'.format(delay), fontsize=10)
 
     plt.xlim((0, 15))
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-    ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
-    ax.set_ylabel('TRO')
-    ax.set_xlabel('PDR on the link [%]')
+    #  ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
+    ax.legend(loc='upper left')  # , bbox_to_anchor=(1., 1.01))
+    ax.set_ylabel('TO')
+    ax.set_xlabel('Link PDR [%]')
 
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -993,24 +1033,29 @@ def plot_tro_over_delay(drop):
     fig, ax = plt.subplots()
     for t, gr in all_df_grouped:
         gr.plot(y='tro', x='delay',
-                linestyle='--', linewidth=.3, marker='+', markersize=8, label=t,
+                linestyle='--', linewidth=.3,
+                marker=plot_markers_variant[gr['variant'].iloc[0]],
+                markersize=8, label=t,
+                #  legend=True,
+                color=plot_colors_variant[gr['variant'].iloc[0]],
                 ax=ax, sharex=ax, sharey=ax)
 
     # plot 1/3 D as vertical grey line
     plt.axvline(x=(200 - gst_sched_delay * 1000) / 3,
                 linestyle='--', color='gray', linewidth=1)
 
-    #  plt.suptitle('TRO for different Duplication Variants', y=.96)
+    #  plt.suptitle('TO for different Duplication Variants', y=.96)
     #  plt.title('PDR: {:.1f}%'.format(float(drop * (1 + drop_correlation))), fontsize=10)
 
     plt.xlim((10, 110))
     box = ax.get_position()
-    ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
-    ax.legend(loc='upper left', bbox_to_anchor=(1., 1.01))
-    ax.set_ylabel('TRO')
-    ax.set_xlabel('Delay on the link [ms]')
+    #  ax.set_position([box.x0, box.y0, box.width * 0.85, box.height])
+    #  ax.legend()
+    ax.legend(loc='upper left')  # , bbox_to_anchor=(1., 1.01))
+    ax.set_ylabel('TO')
+    ax.set_xlabel('Link Delay [ms]')
     if args.save:
-        fig.savefig(save_file)
+        fig.savefig(save_file, bbox_inches='tight')
         plt.close()
         print("saved", save_file)
     else:
@@ -1055,7 +1100,7 @@ def load_experiements(load_dirs, shelf=False):
                                         'runs': exp.num_runs,
                                         'frames': exp.num_frames,
                                         'deadline': exp.deadline,
-                                        'tro': exp.tro_bytes,
+                                        'to': exp.tro_bytes,
                                         'ttd_mean': exp.ttd_mean},
                                        ignore_index=True)
                 print(exp)
@@ -1142,7 +1187,7 @@ for e in [e for e in all_exp if e.variant == 'dpr']:
                                 'runs': e_new.num_runs,
                                 'frames': e_new.num_frames,
                                 'deadline': e_new.deadline,
-                                'tro': e_new.tro_bytes,
+                                'to': e_new.tro_bytes,
                                 'ttd_mean': e_new.ttd_mean},
                                 ignore_index=True)
         print(e_new)
@@ -1152,7 +1197,6 @@ if args.rebuild:
         shelf['all_df'] = all_df
 
 all_exp.sort(key=attrgetter('variant', 'delay', 'drop_rate'))
-
 
 if args.plotall:
     if args.pathfailure:
@@ -1189,7 +1233,7 @@ if args.plotall:
         for i in (5, 20, 40, 60, 80, 100, 120, 150, 200):
             plot_ddr_over_drop(delay=i)
 
-        # TRO
+        # TO
         for i in (0, 0.2, 0.5, 1, 1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10):
             plot_tro_over_delay(drop=i)
 
@@ -1246,31 +1290,56 @@ else:
     # plot_hist_over_drop(var='dpr', delay=40)
     #  for r in all_exp[0].runs:
     #      plot_delay_over_time(r)
-    #  embed()
+    if args.pathfailure is True:
+        for e in all_exp:
+            # print latex table
+            print("{variant:20}& {delay:3}ms & {num_runs:2} & {ddr:6.4f}\\\\ \midrule".format(
+                #  "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} & {tro_exp:5.2f} {sent: 8d} | {lost: 5d} ({loss_rate:4.1f})% | {dupl: 4d} ({dupl_rate:4.1f})% ".format(
+                    variant="\\texttt{" + e.variant.replace('_', '\\_') + "}",
+                    delay=e.delay,
+                    drop_rate=e.drop_rate * (1 + drop_correlation),
+                    exp_ddr=e.ddr_expected,
+                    ddr_error=e.ddr - e.ddr_expected,
+                    num_runs=e.num_runs,
+                    ddr=e.ddr,
+                    ddr_mean=st.mean(r.ddr for r in e.runs),
+                    ddr_std=st.stdev(r.ddr for r in e.runs) if e.num_runs > 1 else 0,
+                    ttd_mean=e.ttd_median / 1000000,
+                    ttd_q95=e.ttd_quantile(0.99) / 1000000,
+                    tro=e.tro_bytes,
+                    tro_exp=e.tro_expected,
+                    sent=e.packets_sent_stream,
+                    lost=e.lost,
+                    loss_rate=(e.lost / e.packets_sent_stream_unmasked) * 100 if e.lost != 0 else 0,
+                    dupl=e.duplicates,
+                    dupl_rate=(e.duplicates_unmasked / e.packets_sent_stream_unmasked) * 100 if e.duplicates_unmasked != 0 else 0
+                ))
+    else:
+        for e in all_exp:
+            # print latex table
+            print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}\\% & {num_runs:2} & "
+                "{exp_ddr:6.3f} & {ddr:6.4f} & {ddr_std:7.5f} & {ddr_error:8.5f} & "
+                "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro_exp:5.2f} & {tro:5.2f} \\\\ \midrule".format(
+                #  "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} & {tro_exp:5.2f} {sent: 8d} | {lost: 5d} ({loss_rate:4.1f})% | {dupl: 4d} ({dupl_rate:4.1f})% ".format(
+                    variant="\\texttt{" + e.variant.replace('_', '\\_') + "}",
+                    delay=e.delay,
+                    drop_rate=e.drop_rate * (1 + drop_correlation),
+                    exp_ddr=e.ddr_expected,
+                    ddr_error=e.ddr - e.ddr_expected,
+                    num_runs=e.num_runs,
+                    ddr=e.ddr,
+                    ddr_mean=st.mean(r.ddr for r in e.runs),
+                    ddr_std=st.stdev(r.ddr for r in e.runs) if e.num_runs > 1 else 0,
+                    ttd_mean=e.ttd_median / 1000000,
+                    ttd_q95=e.ttd_quantile(0.99) / 1000000,
+                    tro=e.tro_bytes,
+                    tro_exp=e.tro_expected,
+                    sent=e.packets_sent_stream,
+                    lost=e.lost,
+                    loss_rate=(e.lost / e.packets_sent_stream_unmasked) * 100 if e.lost != 0 else 0,
+                    dupl=e.duplicates,
+                    dupl_rate=(e.duplicates_unmasked / e.packets_sent_stream_unmasked) * 100 if e.duplicates_unmasked != 0 else 0
+                ))
 
-    for e in all_exp:
-        # print latex table
-        print("{variant:20}& {delay:3}ms & {drop_rate:4.1f}\\% & {num_runs:2} & "
-              "{exp_ddr:6.3f} & {ddr:6.4f} & {ddr_std:7.5f} & {ddr_error:8.5f} & "
-              "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro_exp:5.2f} & {tro:5.2f} \\\\ \midrule".format(
-              #  "{ttd_mean:3.0f}ms & {ttd_q95:3.0f}ms & {tro:5.2f} & {tro_exp:5.2f} {sent: 8d} | {lost: 5d} ({loss_rate:4.1f})% | {dupl: 4d} ({dupl_rate:4.1f})% ".format(
-                  variant="\\texttt{" + e.variant.replace('_', '\\_') + "}",
-                  delay=e.delay,
-                  drop_rate=e.drop_rate * (1 + drop_correlation),
-                  exp_ddr=e.ddr_expected,
-                  ddr_error=e.ddr - e.ddr_expected,
-                  num_runs=e.num_runs,
-                  ddr=e.ddr,
-                  ddr_mean=st.mean(r.ddr for r in e.runs),
-                  ddr_std=st.stdev(r.ddr for r in e.runs) if e.num_runs > 1 else 0,
-                  ttd_mean=e.ttd_median / 1000000,
-                  ttd_q95=e.ttd_quantile(0.99) / 1000000,
-                  tro=e.tro_bytes,
-                  tro_exp=e.tro_expected,
-                  sent=e.packets_sent_stream,
-                  lost=e.lost,
-                  loss_rate=(e.lost / e.packets_sent_stream_unmasked) * 100 if e.lost != 0 else 0,
-                  dupl=e.duplicates,
-                  dupl_rate=(e.duplicates_unmasked / e.packets_sent_stream_unmasked) * 100 if e.duplicates_unmasked != 0 else 0
-              ))
+    embed()
 exit()
